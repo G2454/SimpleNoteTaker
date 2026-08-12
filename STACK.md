@@ -482,6 +482,33 @@ that TS 7 replaced. The linter would run, report almost nothing, and be trusted 
 This project uses oxlint instead (§2). If you specifically need ESLint, the only clean route is
 pinning TypeScript back to 6.x — which would reintroduce the `baseUrl` behaviour below.
 
+### `npm error ERESOLVE` — `electron-vite` vs. Vite 8
+
+```
+While resolving: electron-vite@5.0.0
+Found: vite@8.2.1
+Could not resolve dependency:
+peer vite@"^5.0.0 || ^6.0.0 || ^7.0.0" from electron-vite@5.0.0
+```
+
+**`electron-vite` gates the build toolchain, and its latest stable release does not support Vite 8.**
+Vite 8 support exists only in `electron-vite@6.0.0-beta.1`. Compounding it, `@vitejs/plugin-react@6`
+hard-requires `vite ^8`, so those two move as a pair and neither can be adopted alone.
+
+This project therefore stays on **Vite 7 + @vitejs/plugin-react 5** until electron-vite 6 is stable.
+`.github/dependabot.yml` ignores *major* updates for both so the proposal doesn't reappear weekly;
+minors and patches still flow.
+
+`--force` and `--legacy-peer-deps` are the wrong fix, for the same reason as the ESLint case above:
+they install a combination the maintainers state does not work.
+
+**Reproduce CI's install locally before pushing** — this is the exact command the runner uses, and
+it fails on peer conflicts that a normal `npm install` may paper over:
+
+```bash
+npm ci
+```
+
 ### `Invalid note id` errors when opening a note
 
 Working as designed. Ids are restricted to `[a-z0-9-]{1,64}`, and anything else throws before

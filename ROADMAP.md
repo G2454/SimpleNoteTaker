@@ -96,6 +96,10 @@ Small, real, and worth fixing before CI — a pipeline that runs broken scripts 
       the HTML, JavaScript and CSS grammars (see STACK.md §3). `LazyMotion` should cut the first;
       the second would need the editor itself to be lazy-loaded
 - [ ] **No way to change the hotkey or notes folder** — both are hardcoded constants
+- [ ] **Vite is pinned to 7 by `electron-vite`.** Its latest stable (5.0.0) peers on
+      `vite ^5 || ^6 || ^7`; Vite 8 support is only in `electron-vite@6.0.0-beta.1`, and
+      `@vitejs/plugin-react@6` hard-requires Vite 8, so the three move as a set. Dependabot ignores
+      majors for `vite` and `@vitejs/plugin-react` until electron-vite 6 is stable — revisit then
 - [ ] **Markdown is not sanitized.** Not exploitable yet (nothing renders it), but `marked` output
       goes straight into the DOM, and markdown permits raw HTML. Must be handled in Phase 2.
 

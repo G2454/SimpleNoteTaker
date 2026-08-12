@@ -376,6 +376,7 @@ both workflows via `node-version-file`, so CI and a developer's machine cannot q
 | 2026-08-10 | Actions pinned to commit SHAs, updated by Dependabot | Settled (§3.9) |
 | 2026-08-10 | `.nvmrc` is the single source of the Node version | Settled (§3.9) |
 | 2026-08-10 | `GITHUB_TOKEN` only — no personal access token, no secrets | Settled (§3.8) |
+| 2026-08-12 | Stay on Vite 7 — `electron-vite` stable peers on `^5 \|\| ^6 \|\| ^7` | Blocked on electron-vite 6 |
 
 ### Open questions
 

@@ -45,3 +45,18 @@ updates:
       # the whole app. That is a deliberate migration, not a dependency bump.
       - dependency-name: electron
         update-types: ['version-update:semver-major']
+
+      # `electron-vite` gates the entire build toolchain, and its latest *stable*
+      # release (5.0.0) peers on `vite ^5 || ^6 || ^7`. Vite 8 support exists
+      # only in electron-vite 6.0.0-beta.1.
+      #
+      # Without these two rules Dependabot proposes Vite 8 every week, and the
+      # PR cannot pass CI: @vitejs/plugin-react 6 hard-requires vite ^8, while
+      # electron-vite 5 hard-refuses it. There is no resolution.
+      #
+      # Lift both when electron-vite 6 is stable, and move all three together.
+      # Minor and patch updates are unaffected by this.
+      - dependency-name: vite
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@vitejs/plugin-react'
+        update-types: ['version-update:semver-major']
