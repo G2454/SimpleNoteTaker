@@ -1,0 +1,107 @@
+# Release: triggered by pushing a version tag, e.g. `git tag v0.2.0 && git push origin v0.2.0`.
+#
+# Produces a portable .exe, a .dmg and an .AppImage/.deb, and attaches them to a
+# GitHub Release. The release is created as a **draft** — see the note on the
+# publish step for why.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+# The only workflow here that writes anything. `contents: write` is what lets
+# electron-builder create the release and upload assets using the automatic
+# GITHUB_TOKEN — there is no secret to configure, and no personal access token
+# should be used for this.
+permissions:
+  contents: write
+
+# Deliberately no `cancel-in-progress`: half-cancelling a release that is
+# partway through uploading assets leaves a broken draft behind.
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  # Cheap guard, run once before three runners spend ten minutes building.
+  #
+  # The failure this prevents: tagging v0.2.0 while package.json still says
+  # 0.1.0. electron-builder names artifacts from package.json, so the release
+  # would be called v0.2.0 and contain files called 0.1.0 — and because a tag has
+  # already been pushed at that point, fixing it means deleting the tag remotely.
+  verify:
+    name: Verify tag matches package.json
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Compare versions
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          echo "tag: $TAG_VERSION | package.json: $PKG_VERSION"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $PKG_VERSION. Bump the version, commit, then re-tag."
+            exit 1
+          fi
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: verify
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      # One platform failing should not throw away the other two, which may have
+      # already uploaded their assets.
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows (portable .exe)
+          - os: macos-latest
+            name: macOS (.dmg)
+          - os: ubuntu-latest
+            name: Linux (.AppImage, .deb)
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # Every OS keeps these caches somewhere different. Listing all six paths is
+      # simpler than branching per platform; the ones that do not exist on a
+      # given runner are ignored.
+      - name: Cache Electron and electron-builder downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: builder-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: builder-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Typechecks, then compiles all three processes. Packaging is a separate
+      # step so that `--publish always` can be passed to electron-builder
+      # directly rather than baked into the `dist` script.
+      - name: Build
+        run: npm run build
+
+      - name: Package and publish
+        run: npx electron-builder --publish always
+        env:
+          # Provided automatically by Actions; scoped by the `permissions` block
+          # above. electron-builder looks for exactly this variable name.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # This project is not code-signed (DOCUMENTATION.md §3.6). Without
+          # this, electron-builder searches the macOS keychain for a signing
+          # identity and fails the build when it finds none.
+          CSC_IDENTITY_AUTO_DISCOVERY: false

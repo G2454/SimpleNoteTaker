@@ -1,5 +1,8 @@
 # Note Taker
 
+[![CI](https://github.com/G2454/SimpleNoteTaker/actions/workflows/ci.yml/badge.svg)](https://github.com/G2454/SimpleNoteTaker/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **Press a key anywhere. A panel fades in over whatever you were doing. Type a note in markdown,
 press Escape, and it's gone — saved as a plain `.md` file on your disk.**
 
@@ -33,17 +36,20 @@ thought shouldn't mean alt-tabbing, waiting for an app to load, and finding your
 | Note storage — one `.md` per note | ✅ Working, confirmed writing real files |
 | Markdown editor, note list, search, autosave | ✅ Built, ⚠️ not yet proven in daily use |
 | Lint, tests, typecheck, packaged build | ✅ All green |
+| CI and release pipelines | ✅ Written, ⚠️ not yet run |
 | Markdown preview & mermaid diagrams | ❌ Not started |
 | Settings (custom hotkey, notes folder) | ❌ Not started — both are hardcoded today |
-| CI/CD and published releases | ❌ Not started |
+| Published releases | ❌ None yet |
 
 ## Installing
 
-No releases are published yet — they arrive with the release pipeline. For now, build it yourself.
+No releases are published yet. The pipeline that produces them is in place, so the first tagged
+version will appear on the [Releases page](https://github.com/G2454/SimpleNoteTaker/releases) —
+until then, build it yourself.
 
 ### Build from source
 
-Requires **Node.js 20+** (developed on 24) and npm.
+Requires **npm** and the Node version in [`.nvmrc`](.nvmrc) (24 — `nvm use` will pick it up).
 
 ```bash
 git clone https://github.com/G2454/SimpleNoteTaker.git
@@ -107,6 +113,22 @@ npm run lint         # oxlint, fails on any finding
 npm run test         # vitest
 npm run test:watch   # vitest in watch mode
 ```
+
+Every push and pull request runs typecheck, lint, tests and a build; pushes to `main` also package
+a Windows `.exe` and attach it to the run, so any commit can be downloaded and tried without
+tagging anything.
+
+### Cutting a release
+
+```bash
+# 1. bump the version — the tag and package.json must agree, or the release is blocked
+npm version 0.2.0          # commits and tags in one step
+git push --follow-tags
+```
+
+Pushing a `v*` tag builds on Windows, macOS and Linux in parallel and uploads everything to a
+**draft** release. Review it, then publish it by hand — a draft avoids a half-uploaded release
+being downloadable while two of the three runners are still working.
 
 An Electron app is three programs, and the directory layout mirrors that:
 

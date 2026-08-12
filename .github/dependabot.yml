@@ -1,0 +1,47 @@
+# Dependency updates arrive as pull requests to be reviewed, rather than being
+# absorbed silently by a version range. This is the other half of the
+# supply-chain posture in ROADMAP.md §5: the lockfile pins what we install, and
+# this is how the pins move.
+version: 2
+
+updates:
+  # GitHub Actions are pinned to commit SHAs in the workflow files. Dependabot
+  # understands that pattern and updates both the SHA and the trailing version
+  # comment, which is the only reason SHA pinning is maintainable by hand.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: 'ci'
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'deps'
+    groups:
+      # These move together and are only ever used as a set; separate pull
+      # requests for each would be noise.
+      codemirror:
+        patterns: ['@codemirror/*', '@lezer/*']
+      react:
+        patterns: ['react', 'react-dom', '@types/react', '@types/react-dom']
+      # Everything else that is only a build/test concern, grouped so routine
+      # patch bumps do not each need their own review.
+      dev-tooling:
+        patterns:
+          - 'vite'
+          - 'vitest'
+          - 'electron-vite'
+          - '@vitejs/*'
+          - 'oxlint'
+          - 'typescript'
+          - '@types/node'
+    ignore:
+      # Electron major upgrades change the Chromium and Node versions underneath
+      # the whole app. That is a deliberate migration, not a dependency bump.
+      - dependency-name: electron
+        update-types: ['version-update:semver-major']

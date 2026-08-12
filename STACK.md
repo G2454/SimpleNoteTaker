@@ -288,20 +288,111 @@ then `mermaid.render(id, source)` per diagram, returning `{ svg }`.
 
 ---
 
-## 5. Config files
+## 5. CI/CD — GitHub Actions
+
+GitHub's built-in automation. A **workflow** is a YAML file in `.github/workflows/` describing
+**jobs**; each job runs on a fresh virtual machine (a **runner**) and contains **steps**. Jobs run
+in parallel unless one `needs` another. Steps run in order, and a failing step fails the job.
+
+A step is either a shell command (`run:`) or a reusable action (`uses:`).
+
+### The two workflows here
+
+| File | Trigger | Does |
+|---|---|---|
+| `ci.yml` | push to `main`, any PR, manual | typecheck → lint → test → build on Ubuntu, plus a Windows packaging smoke test on main |
+| `release.yml` | pushing a `v*` tag | verifies the tag matches `package.json`, then builds and publishes on all three OSes |
+
+### The concepts they use
+
+**`permissions:`** — scopes the automatic token for that workflow. `ci.yml` is `contents: read`;
+`release.yml` needs `contents: write` to create a release. Declaring the minimum is the point: the
+default is broader.
+
+**`secrets.GITHUB_TOKEN`** — a token GitHub mints per run, automatically, scoped by the
+`permissions` block and expiring when the run ends. **It is not something you configure.** This
+project needs no other secrets; `electron-builder` reads it from the `GH_TOKEN` environment
+variable.
+
+**`concurrency:`** — groups runs so a new one can supersede an old one. CI cancels superseded runs
+(a second push makes the first irrelevant); the release workflow deliberately does *not*, because
+cancelling mid-upload leaves a half-populated draft.
+
+**`strategy.matrix`** — runs one job definition many times with different inputs. Here: three
+operating systems. **`fail-fast: false`** stops one failure from cancelling its siblings, which
+matters when two of them have already uploaded release assets.
+
+**Caching** (`actions/cache`) — persists directories between runs, keyed on a hash. Restoring is
+best-effort; a miss just means a slow run, never a broken one. Two things are worth caching for
+Electron:
+- `~/.npm` — handled by `setup-node`'s `cache: npm`. Note this caches the npm *download* cache, not
+  `node_modules`; `npm ci` deletes and recreates that directory by design.
+- The **Electron binary** (`~/.cache/electron`, or `AppData\Local\electron\Cache` on Windows). The
+  `electron` package's postinstall downloads ~100 MB of Chromium, and it is by far the slowest part
+  of a cold install. Keyed on the lockfile, since that decides the version.
+
+**Artifacts** (`actions/upload-artifact`) — files kept after a run, downloadable from its summary
+page. Unrelated to Releases: artifacts expire, are tied to a run, and are the right home for a
+build you want to test rather than ship.
+
+**`node-version-file: .nvmrc`** — reads the Node version from the same file a developer's `nvm` uses,
+so the two cannot drift.
+
+### Pinning actions to SHAs
+
+Every `uses:` in this repository names a commit hash, not a tag:
+
+```yaml
+uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+```
+
+Tags are mutable — `v7` can be moved to different code by whoever controls that repository, and it
+runs inside a workflow holding a token. The trailing comment keeps it readable and is what
+Dependabot rewrites when it proposes an upgrade. Reasoning in DOCUMENTATION.md §3.9.
+
+To resolve a tag to its commit yourself:
+
+```bash
+git ls-remote --tags https://github.com/actions/checkout.git 'refs/tags/v7.0.1^{}'
+```
+
+The `^{}` suffix dereferences an annotated tag to the commit it points at. Without it you may get
+the hash of the tag object instead, which `uses:` will not accept.
+
+### Dependabot
+
+Configured in `.github/dependabot.yml` — note that it lives *beside* `workflows/`, not inside it; it
+is not a workflow. It opens pull requests for npm packages and for the pinned action SHAs, grouped
+so that routine bumps don't arrive one at a time. Electron **major** versions are ignored on
+purpose: a major changes the Chromium and Node versions underneath the whole app, which is a
+migration to plan rather than a PR to merge.
+
+### What is not automated
+
+- **Branch protection** is repository configuration, not a file. Settings → Branches → rule for
+  `main` → *Require status checks to pass*.
+- **Publishing the draft release** is a manual click, by design (DOCUMENTATION.md §3.8).
+- **Code signing** is not set up, so there are no signing certificates in secrets.
+
+---
+
+## 6. Config files
 
 | File | Purpose |
 |---|---|
 | `package.json` | Dependencies and the `dev` / `build` / `dist` / `lint` / `test` scripts |
 | `electron.vite.config.ts` | Build config for all three processes |
 | `tsconfig*.json` | Type checking, split by runtime environment |
-| `electron-builder.yml` | Packaging config — portable `.exe`, `.dmg`, `.AppImage` |
+| `electron-builder.yml` | Packaging config — portable `.exe`, `.dmg`, `.AppImage`, and the GitHub publish target |
 | `.oxlintrc.json` | Lint rules, categories, plugins, and the reasoning for each suppression |
-| `.github/workflows/*.yml` | CI and release pipelines *(not yet written)* |
+| `.nvmrc` | The Node version, read by both workflows and by `nvm` |
+| `.github/workflows/ci.yml` | Typecheck, lint, test, build; Windows packaging smoke test |
+| `.github/workflows/release.yml` | Tag-triggered cross-platform build and GitHub Release |
+| `.github/dependabot.yml` | Weekly dependency and action-SHA update PRs |
 
 ---
 
-## 6. Glossary
+## 7. Glossary
 
 - **Main process** — the Node.js process. One per app. Owns windows and OS access.
 - **Renderer process** — a Chromium process running your UI. One per window. Sandboxed.
@@ -314,10 +405,17 @@ then `mermaid.render(id, source)` per diagram, returning `{ svg }`.
 - **Tree shaking** — dropping code that's never imported.
 - **Code splitting** — emitting multiple bundles so some can load lazily.
 - **Transaction** (CodeMirror) — an immutable description of a document change.
+- **Workflow / job / step** (Actions) — a YAML automation file / one runner's worth of work / one
+  command or action within it.
+- **Runner** — the fresh virtual machine a job executes on.
+- **Matrix** — one job definition expanded across several inputs, e.g. three operating systems.
+- **Artifact** — a file kept after a workflow run, downloadable from its summary. Expires; distinct
+  from a Release asset.
+- **Draft release** — a release visible only to maintainers until explicitly published.
 
 ---
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 ### `Error: Electron uninstall` when running `npm run dev`
 
@@ -393,10 +491,14 @@ open. Rename it to lowercase letters, digits and hyphens.
 
 ---
 
-## 8. Official documentation
+## 9. Official documentation
 
 - Electron — <https://www.electronjs.org/docs/latest>
 - Electron security checklist — <https://www.electronjs.org/docs/latest/tutorial/security>
+- GitHub Actions — <https://docs.github.com/actions>
+- Actions security hardening — <https://docs.github.com/actions/security-guides/security-hardening-for-github-actions>
+- Dependabot options — <https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file>
+- oxlint — <https://oxc.rs/docs/guide/usage/linter.html>
 - electron-vite — <https://electron-vite.org>
 - electron-builder — <https://www.electron.build>
 - Vite — <https://vite.dev>

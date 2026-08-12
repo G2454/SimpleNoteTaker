@@ -50,3 +50,17 @@ linux:
     - AppImage
     - deb
   category: Utility
+
+# Where `electron-builder --publish always` uploads to, from the release
+# workflow. Owner and repo are stated explicitly rather than inferred from the
+# git remote, so a fork or a renamed remote cannot silently retarget a release.
+#
+# `releaseType: draft` matters for the three-OS matrix: the runners finish at
+# different times, and a published release would be visible — and downloadable —
+# while two thirds of its assets were still missing. The draft is assembled
+# quietly, and publishing it is a deliberate click once everything has landed.
+publish:
+  provider: github
+  owner: G2454
+  repo: SimpleNoteTaker
+  releaseType: draft

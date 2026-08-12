@@ -1,0 +1,122 @@
+# Continuous integration: every push to main and every pull request.
+#
+# Actions are pinned to commit SHAs rather than tags. A tag is a mutable pointer
+# — whoever controls the action repository can move `v7` to new code at any
+# time, and a workflow runs that code with access to this repository. The `#`
+# comment after each SHA is the human-readable version, and is what Dependabot
+# reads when it proposes an update.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Read-only. CI never needs to write to the repository, and the default token
+# permissions are broader than that.
+permissions:
+  contents: read
+
+# A second push to the same branch makes the first run irrelevant. Cancelling it
+# frees the runner instead of racing.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Typecheck, lint, test, build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # `.nvmrc` is the single source of truth for the Node version, so CI
+          # and a developer's machine cannot drift apart.
+          node-version-file: .nvmrc
+          # Caches ~/.npm (the download cache), which is what makes `npm ci`
+          # fast. It does not cache node_modules, and should not: `npm ci`
+          # deletes and recreates that directory by design.
+          cache: npm
+
+      # The `electron` npm package is a small wrapper; its postinstall script
+      # downloads a ~100 MB Chromium binary. That download is the slowest part of
+      # a cold install, and it is keyed on the lockfile because that is what
+      # determines the Electron version.
+      - name: Cache Electron binary
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-${{ runner.os }}-
+
+      # `npm ci` rather than `npm install`: it installs exactly what the
+      # lockfile says and fails if package.json and the lockfile disagree.
+      # `npm install` would silently resolve new versions — which is precisely
+      # the supply-chain surface we are trying not to have.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # `-f github` emits workflow annotations, so findings appear inline on the
+      # pull request diff instead of only in the log.
+      - name: Lint
+        run: npm run lint -- -f github
+
+      - name: Test
+        run: npm test
+
+      # esbuild strips types without checking them, so a green typecheck does not
+      # prove the bundle builds. This catches resolution and bundling errors that
+      # the other three steps cannot.
+      - name: Build
+        run: npm run build
+
+  # Packaging is where platform-specific breakage shows up, and it would
+  # otherwise only be discovered when a release tag is pushed — at which point
+  # the tag has to be deleted and recreated. This job front-loads that failure.
+  #
+  # Only on main: it is the slowest job here, and pull requests get their
+  # signal from `quality` above.
+  package-smoke:
+    name: Packaging smoke test (Windows)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Cache Electron and electron-builder downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: builder-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: builder-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Package
+        run: npm run dist
+
+      # Lets you download and actually run the build from any commit on main,
+      # without tagging a release to do it.
+      - name: Upload portable executable
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: note-taker-portable-${{ github.sha }}
+          path: release/*.exe
+          if-no-files-found: error
+          retention-days: 14

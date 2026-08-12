@@ -1,7 +1,8 @@
 # Note Taker — Roadmap & Status
 
-**Last updated:** 2026-08-10 · **Version:** 0.1.0 · **Status:** feature-complete through Phase 1,
-largely unverified; not yet on GitHub
+**Last updated:** 2026-08-10 · **Version:** 0.1.0 · **Status:** Phases 1, 3 and 4 built;
+public at [G2454/SimpleNoteTaker](https://github.com/G2454/SimpleNoteTaker). Nothing has been
+run end to end yet — neither the app nor the pipeline.
 
 Companion documents: **[DOCUMENTATION.md](DOCUMENTATION.md)** (product rules and why each decision
 was made) · **[STACK.md](STACK.md)** (what each tool is, plus troubleshooting) ·
@@ -22,12 +23,13 @@ was made) · **[STACK.md](STACK.md)** (what each tool is, plus troubleshooting) 
 | Packaging (portable `.exe`) | ✅ Done |
 | Preview & Mermaid | ❌ Not started |
 | Linting & tests | ✅ Done — `lint`, `test`, `typecheck`, `build` all green |
-| CI/CD | ❌ Not started — no repo, no commits yet |
+| CI/CD | ✅ Written, ⚠️ **never run** |
 | Auto-update | ⛔ **Removed from scope** — see §5 |
 
 Roughly: **the app works end to end on paper, and partly in fact.** Storage has demonstrably run —
 there are real notes on disk — but no human has watched the full summon → type → dismiss → reopen
-loop. The remaining work is proving it, then getting it onto GitHub with a pipeline behind it.
+loop, and no workflow has executed a single time. Both pipelines and the app itself are now
+waiting on the same thing: someone actually running them.
 
 ---
 
@@ -159,16 +161,30 @@ Follow-ups this phase created:
 **Trade-off accepted:** oxlint has no type-aware rules (those needing a type checker). Revisit if
 `typescript-eslint` gains TS 7 support.
 
-### Phase 4 — CI/CD *(the DevOps learning goal)*
+### Phase 4 — CI/CD *(the DevOps learning goal)* — ⚠️ written 2026-08-10, never run
 
-- [ ] **4.1** `ci.yml` — on PR and push: typecheck, lint, test
-- [ ] **4.2** Cache `node_modules` **and the Electron binary** (the slowest part of a cold build)
-- [ ] **4.3** `release.yml` — on version tag, matrix build across
-      `windows-latest` / `macos-latest` / `ubuntu-latest`
-- [ ] **4.4** Publish `.exe` / `.dmg` / `.AppImage` to GitHub Releases via `electron-builder`
-- [ ] **4.5** Pin every GitHub Action to a commit SHA, not a tag — see §5
-- [ ] **4.6** Enable Dependabot for npm and Actions, so updates are reviewed rather than absorbed
-- [ ] **4.7** Branch protection requiring CI to pass
+- [x] **4.1** [`ci.yml`](.github/workflows/ci.yml) — on PR and push to main: typecheck, lint, test,
+      build. Lint uses `-f github`, so findings annotate the diff instead of hiding in a log
+- [x] **4.2** Cache the npm download cache **and the Electron binary** — the ~100 MB Chromium
+      download is the slowest part of a cold install, keyed on the lockfile
+- [x] **4.3** [`release.yml`](.github/workflows/release.yml) — on a `v*` tag, matrix across
+      `windows-latest` / `macos-latest` / `ubuntu-latest`, with `fail-fast: false` so one platform
+      failing doesn't discard the other two
+- [x] **4.4** Publishes to GitHub Releases via `electron-builder --publish always`, using the
+      automatic `GITHUB_TOKEN` — **no secret to configure**. Assets land in a **draft** release
+- [x] **4.5** Every action pinned to a commit SHA with the version in a trailing comment
+- [x] **4.6** [Dependabot](.github/dependabot.yml) for npm and Actions, grouped so routine bumps
+      aren't one PR each. Electron **majors** are ignored — that's a migration, not a bump
+- [x] **4.8** A packaging smoke test on `windows-latest` for pushes to main, uploading the `.exe`
+      as an artifact. Catches packaging breakage at commit time rather than at tag time, when
+      fixing it would mean deleting a pushed tag
+- [x] **4.9** Tag/version guard — the release is blocked if `v0.2.0` is pushed while package.json
+      still says `0.1.0`. Runs once, before three runners spend ten minutes building
+- [ ] **4.7** Branch protection requiring CI to pass — **must be done in the GitHub UI**, it is not
+      a file in the repo. Settings → Branches → Add rule for `main` → *Require status checks to
+      pass* → select `Typecheck, lint, test, build`
+- [ ] **4.10** Verify the pipeline actually runs. Nothing here has executed yet; workflow YAML is
+      the classic thing that is only correct on the third attempt
 
 **Deliberately skipped:** code signing. A certificate costs $200–400/year and OV certs need to
 build SmartScreen reputation regardless. Users will see a SmartScreen warning; that is accepted.

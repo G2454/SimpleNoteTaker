@@ -295,6 +295,60 @@ absolute paths, UNC paths, null bytes, percent-encoding) rather than as examples
 
 The same split is what will make the search and markdown logic testable later.
 
+### 3.8 The shape of the pipeline
+
+Two workflows, split by what they cost and what they're allowed to do.
+
+**`ci.yml`** runs on every push to `main` and every pull request: typecheck, lint, test, build. It
+runs on Ubuntu only, because none of those four steps are platform-dependent and Linux runners are
+the cheapest. `permissions: contents: read` — CI has no reason to be able to write to the
+repository, and the default token grants more than it needs.
+
+Building is included even though typechecking passes separately, because `electron-vite` compiles
+with esbuild, which strips types without checking them (§2.3). A green typecheck does not prove the
+bundle resolves.
+
+**`release.yml`** runs only on a `v*` tag, and is the one workflow with `contents: write`. It builds
+on all three platforms in parallel with `fail-fast: false`, so one platform's failure doesn't
+discard two successful builds.
+
+Decisions inside that worth recording:
+
+- **Releases are created as drafts.** Three runners finish at different times. A published release
+  would be visible and downloadable while two thirds of its assets were still uploading — someone
+  would get a release page with no build for their OS. The draft is assembled quietly and published
+  in one deliberate action.
+- **A version guard runs first**, comparing the tag against `package.json`. The failure it prevents
+  is tagging `v0.2.0` while the manifest still says `0.1.0`: electron-builder names artifacts from
+  the manifest, so the release would be titled one version and contain another. It's cheap to check
+  and expensive to fix afterwards, because by then the tag is already pushed.
+- **A packaging smoke test runs on Windows for pushes to main.** Packaging is where
+  platform-specific breakage appears, and without this it would surface only when a tag is pushed —
+  the one moment when fixing it is most awkward. It also uploads the `.exe` as an artifact, so any
+  commit on main can be downloaded and actually run.
+- **No secrets are configured.** The automatic `GITHUB_TOKEN`, scoped by the workflow's own
+  `permissions` block, is enough to create a release and upload assets. A personal access token
+  would be a long-lived credential with far broader scope, stored in the repository.
+
+### 3.9 Actions are pinned to commit SHAs
+
+Every `uses:` in this project names a 40-character commit hash, with the version in a trailing
+comment.
+
+A tag is a mutable pointer. Whoever controls an action's repository can move `v7` to different code
+at any time, and that code runs inside a workflow that — in `release.yml` — holds a token permitted
+to write releases. Pinning to a tag means trusting that maintainer, and everyone who can push to
+them, indefinitely and silently. This is not hypothetical; it is how several real Actions
+compromises have propagated.
+
+The obvious objection is that pinned SHAs never receive security fixes. That's what §2.7's
+Dependabot configuration answers: it understands the `SHA # version` pattern and opens a pull
+request to move both. The update becomes a reviewable event rather than something that happens to
+you between two runs of the same workflow.
+
+`.nvmrc` follows the same instinct on a smaller scale: the Node version is stated once and read by
+both workflows via `node-version-file`, so CI and a developer's machine cannot quietly drift apart.
+
 ---
 
 ## 4. Decision log
@@ -316,6 +370,12 @@ The same split is what will make the search and markdown logic testable later.
 | 2026-08-10 | Notes default to `Documents/Note Taker`, changeable in settings | Settled |
 | 2026-08-10 | Settings in a hand-rolled `settings.json`, not `electron-store` | Settled (§2.7) |
 | 2026-08-10 | Public GitHub repository | Settled |
+| 2026-08-10 | CI on Ubuntu only; packaging matrix reserved for releases | Settled (§3.8) |
+| 2026-08-10 | Releases published as drafts, not directly | Settled (§3.8) |
+| 2026-08-10 | Tag must match `package.json` before a release builds | Settled (§3.8) |
+| 2026-08-10 | Actions pinned to commit SHAs, updated by Dependabot | Settled (§3.9) |
+| 2026-08-10 | `.nvmrc` is the single source of the Node version | Settled (§3.9) |
+| 2026-08-10 | `GITHUB_TOKEN` only — no personal access token, no secrets | Settled (§3.8) |
 
 ### Open questions
 

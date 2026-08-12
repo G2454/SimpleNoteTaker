@@ -5,6 +5,10 @@
   "main": "./out/main/index.js",
   "author": "guilhermesumita000",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/G2454/SimpleNoteTaker.git"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "start": "electron-vite preview",
@@ -17,7 +21,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "pack:dir": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder --publish never"
   },
   "devDependencies": {
     "@codemirror/commands": "^6.10.4",
