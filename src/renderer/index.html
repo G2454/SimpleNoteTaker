@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!--
+      Content Security Policy. Defence in depth: even if a note contained a
+      malicious <script>, this stops it running.
+
+      - `connect-src` includes ws: so Vite's hot-reload socket works in dev.
+      - `style-src` needs 'unsafe-inline' because CodeMirror, Framer Motion and
+        mermaid all set element styles directly. Unavoidable, and low risk
+        compared to allowing inline *scripts*.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self';
+               script-src 'self';
+               style-src 'self' 'unsafe-inline';
+               img-src 'self' data: blob:;
+               font-src 'self' data:;
+               connect-src 'self' ws: http://localhost:*"
+    />
+
+    <title>Note Taker</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./src/main.tsx"></script>
+  </body>
+</html>

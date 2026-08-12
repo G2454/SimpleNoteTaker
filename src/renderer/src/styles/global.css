@@ -1,0 +1,343 @@
+/*
+ * Design tokens.
+ *
+ * Values follow Apple's system palettes rather than being invented — those
+ * greys and blues are tuned, and guessing at them lands in the uncanny valley.
+ */
+:root {
+  --radius-panel: 16px;
+  --radius-control: 8px;
+
+  --font-ui:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', 'Inter', system-ui,
+    sans-serif;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', ui-monospace, Consolas, monospace;
+
+  /* Dark by default: an overlay sits on top of arbitrary content, and a dark
+     panel reads as "floating above" far more convincingly than a light one. */
+  --panel-bg: rgba(30, 30, 32, 0.94);
+  --sidebar-bg: rgba(22, 22, 24, 0.6);
+  --panel-border: rgba(255, 255, 255, 0.09);
+  --panel-highlight: rgba(255, 255, 255, 0.16);
+  --panel-shadow: 0 24px 64px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
+
+  --text-primary: rgba(255, 255, 255, 0.92);
+  --text-secondary: rgba(235, 235, 245, 0.6);
+  --text-tertiary: rgba(235, 235, 245, 0.3);
+  --accent: #0a84ff;
+  --code: #ff9f0a;
+  --separator: rgba(255, 255, 255, 0.08);
+  --hover: rgba(255, 255, 255, 0.06);
+  --active: rgba(255, 255, 255, 0.11);
+  --selection: rgba(10, 132, 255, 0.35);
+  --scrollbar: rgba(255, 255, 255, 0.18);
+  --control-bg: rgba(255, 255, 255, 0.07);
+  --danger: #ff453a;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --panel-bg: rgba(246, 246, 248, 0.96);
+    --sidebar-bg: rgba(236, 236, 240, 0.7);
+    --panel-border: rgba(0, 0, 0, 0.08);
+    --panel-highlight: rgba(255, 255, 255, 0.9);
+    --panel-shadow: 0 24px 64px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.1);
+
+    --text-primary: rgba(0, 0, 0, 0.88);
+    --text-secondary: rgba(60, 60, 67, 0.6);
+    --text-tertiary: rgba(60, 60, 67, 0.3);
+    --accent: #007aff;
+    --code: #bf5af2;
+    --separator: rgba(0, 0, 0, 0.08);
+    --hover: rgba(0, 0, 0, 0.04);
+    --active: rgba(0, 0, 0, 0.08);
+    --selection: rgba(0, 122, 255, 0.25);
+    --scrollbar: rgba(0, 0, 0, 0.2);
+    --control-bg: rgba(0, 0, 0, 0.05);
+    --danger: #ff3b30;
+  }
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  /* The OS window is transparent; every visible pixel is drawn by the panel.
+     A background here would show up as an opaque rectangle. */
+  background: transparent;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+/* Inset so the CSS shadow has room — a shadow drawn at the very edge of the
+   window gets clipped by the window bounds. */
+#root {
+  padding: 12px;
+}
+
+.panel {
+  height: 100%;
+  display: flex;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--panel-shadow);
+  overflow: hidden;
+  position: relative;
+}
+
+/* A single bright hairline along the top edge. This is the detail that sells
+   "glass": real materials catch light on their upper edge, and without it a
+   translucent panel just looks like a flat grey rectangle. */
+.panel::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--panel-highlight) 20%,
+    var(--panel-highlight) 80%,
+    transparent
+  );
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ---------------------------------------------------------------- sidebar */
+
+.sidebar {
+  width: 216px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--separator);
+}
+
+.sidebar__search {
+  padding: 10px;
+  -webkit-app-region: drag; /* the strip is draggable... */
+}
+
+.search-input {
+  -webkit-app-region: no-drag; /* ...but the field itself must stay clickable */
+  width: 100%;
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--control-bg);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  outline: none;
+  user-select: text;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.search-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.search-input:focus {
+  border-color: var(--accent);
+  background: transparent;
+}
+
+.sidebar__list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 8px;
+}
+
+.sidebar__empty {
+  padding: 16px 8px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.note-item {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 7px 26px 7px 9px;
+  margin-bottom: 1px;
+  font-family: inherit;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-control);
+  cursor: default;
+  transition: background 0.12s ease;
+}
+
+.note-item:hover {
+  background: var(--hover);
+}
+
+.note-item--active {
+  background: var(--active);
+}
+
+.note-item__title {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  /* Titles are arbitrary user text; keep rows a fixed height. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.note-item__meta {
+  display: block;
+  margin-top: 1px;
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+}
+
+.note-item__delete {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-tertiary);
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+/* Revealed on hover: destructive actions shouldn't sit permanently under the
+   cursor, but shouldn't be hidden behind a menu either. */
+.note-item:hover .note-item__delete {
+  opacity: 1;
+}
+
+.note-item__delete:hover {
+  color: var(--danger);
+  background: var(--hover);
+}
+
+.sidebar__footer {
+  padding: 8px;
+  border-top: 1px solid var(--separator);
+}
+
+.new-note {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 9px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-control);
+  cursor: default;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.new-note:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+/* ------------------------------------------------------------------- main */
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0; /* lets the editor shrink instead of overflowing the panel */
+}
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--separator);
+  -webkit-app-region: drag;
+  flex-shrink: 0;
+}
+
+.titlebar__title {
+  font-size: 12.5px;
+  font-weight: 590;
+  letter-spacing: -0.01em;
+  color: var(--text-secondary);
+}
+
+.titlebar__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.save-indicator {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  /* Fades in rather than appearing abruptly — it's an acknowledgement, not an alert. */
+  animation: fade-in 0.25s ease;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+kbd {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--control-bg);
+  color: var(--text-secondary);
+}
+
+.editor {
+  flex: 1;
+  min-height: 0; /* required for the inner scroller to scroll rather than grow */
+  overflow: hidden;
+  user-select: text;
+  cursor: auto;
+}
+
+/* Respect the OS "reduce motion" setting: vestibular disorders make spring
+   animation genuinely unpleasant, and this is one line. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

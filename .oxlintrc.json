@@ -1,0 +1,83 @@
+// Oxlint configuration. JSONC — comments are supported.
+//
+// Why oxlint and not ESLint: this project is on TypeScript 7, and
+// `typescript-eslint` declares a peer range of `>=4.8.4 <6.1.0`. No published
+// version supports TS 7, so the standard ESLint stack cannot be installed
+// without forcing a resolution npm itself calls "potentially broken".
+// Oxlint parses TypeScript natively, needs no TypeScript peer at all, and adds
+// 2 packages instead of ~100 — which also suits the supply-chain posture in
+// ROADMAP.md §5.
+//
+// Trade-off: no type-aware rules (the ones needing a type checker). If that
+// becomes limiting, revisit when typescript-eslint supports TS 7.
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+
+  "plugins": ["typescript", "unicorn", "oxc", "react", "promise", "import"],
+
+  // `correctness` and `suspicious` are things that are wrong or almost certainly
+  // wrong, so they fail the build. `perf` is advisory.
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "warn"
+  },
+
+  "env": {
+    "es2024": true
+  },
+
+  "ignorePatterns": ["out", "release", "build", "node_modules"],
+
+  "rules": {
+    // The app is two Node processes and a renderer; console output in the main
+    // process is how failures surface at all (see the hotkey registration error).
+    "no-console": "off",
+
+    // Obsolete under the automatic JSX runtime. tsconfig.web.json sets
+    // `"jsx": "react-jsx"`, so JSX compiles to `_jsx()` imported by the
+    // compiler — a `React` binding is neither needed nor wanted.
+    "react/react-in-jsx-scope": "off",
+
+    // `import './styles/global.css'` in main.tsx is a side-effect import, which
+    // is the only way Vite can be told to include a stylesheet.
+    "import/no-unassigned-import": "off",
+
+    // Suggests `toSorted()` over `sort()` to avoid mutating a shared array. Both
+    // call sites sort an array they just created (`.map(...)` and `Promise.all`
+    // each return a fresh one), so there is nothing to mutate out from under
+    // anyone. `toSorted()` is also unavailable under `"lib": ["ES2022"]`.
+    "unicorn/no-array-sort": "off",
+
+    // Wants every `.then()` to return or throw, which is right for chains being
+    // built up and wrong for the fire-and-forget effect in useNotes.ts, where
+    // the result is deliberately discarded.
+    "promise/always-return": "off",
+
+    "eqeqeq": "error",
+    "no-var": "error",
+    "prefer-const": "error"
+  },
+
+  "overrides": [
+    {
+      "files": ["src/main/**", "src/preload/**", "*.config.ts", "*.config.mts"],
+      "env": { "node": true }
+    },
+    {
+      "files": ["src/renderer/**"],
+      "env": { "browser": true }
+    },
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx"],
+      "env": { "node": true }
+    },
+    {
+      // `export {}` is what makes a .d.ts a module rather than a global script,
+      // which `declare global` requires. The rule reads it as a pointless empty
+      // export; here it is load-bearing.
+      "files": ["**/*.d.ts"],
+      "rules": { "unicorn/require-module-specifiers": "off" }
+    }
+  ]
+}

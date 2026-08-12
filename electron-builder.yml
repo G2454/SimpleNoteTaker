@@ -1,0 +1,52 @@
+appId: com.notetaker.app
+productName: Note Taker
+copyright: Copyright © 2026
+
+directories:
+  output: release
+  buildResources: build
+
+# Only the compiled output and the manifest ship. Source and node_modules that
+# Vite already bundled would just inflate the installer.
+files:
+  - out/**/*
+  - package.json
+
+# Copied into the app's resources directory, reachable at runtime via
+# `process.resourcesPath`. The tray icon must be a real file on disk, so it
+# cannot be bundled by Vite like the renderer's assets.
+extraResources:
+  - from: resources/
+    to: .
+    filter:
+      - '**/*'
+
+# Portable rather than an installer. Note Taker is a background utility: the
+# value of "download one file, double-click, it works" outweighs Start-menu
+# entries, and it lets the app live on a USB stick or a synced folder.
+#
+# This pairs with the decision to have no auto-updater (DOCUMENTATION/ROADMAP):
+# `electron-updater` cannot update a portable build anyway, so dropping it costs
+# nothing here and removes a privileged dependency from the supply chain.
+win:
+  target:
+    - portable
+
+portable:
+  # Spelled out rather than derived from ${productName}, which contains a space.
+  # This string becomes the download filename on GitHub Releases.
+  artifactName: NoteTaker-${version}-portable.${ext}
+  # A stable extraction directory instead of a random one per launch. The target
+  # is a self-extracting archive: without this, every run unpacks ~200 MB to a
+  # new temp folder, which is slow and leaves litter behind.
+  unpackDirName: NoteTaker
+
+mac:
+  target: dmg
+  category: public.app-category.productivity
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Utility
