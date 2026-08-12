@@ -4,8 +4,9 @@
 
 `DOCUMENTATION.md` covers *what we decided and why*. This file covers *what the pieces are* — it's
 the one to read when you hit a name in the codebase and think "what is that, actually?"
+`ROADMAP.md` covers *where the project is*, and `README.md` is the front door for using it.
 
-Versions are those installed on 2026-08-07.
+Versions are those installed as of 2026-08-10.
 
 ---
 
@@ -18,8 +19,9 @@ Versions are those installed on 2026-08-07.
 | `vite` | 7.3.6 | build | The underlying bundler/dev server |
 | `@vitejs/plugin-react` | 5.2.0 | build | JSX transform + React Fast Refresh |
 | `typescript` | 7.0.2 | build | Type checking (`tsc --noEmit`) |
-| `electron-builder` | 26.15.3 | release | Turns the build into `.exe` / `.dmg` / `.AppImage` |
+| `electron-builder` | 26.15.3 | release | Turns the build into a portable `.exe` / `.dmg` / `.AppImage` |
 | `vitest` | 4.1.10 | test | Unit tests |
+| `oxlint` | 1.78.0 | quality | The linter. Rust-based; replaces ESLint (see §2) |
 | `react` / `react-dom` | 19.2.8 | UI | The interface |
 | `framer-motion` | 13.0.0 | UI | Spring animations |
 | `@codemirror/*` | 6.x | UI | The markdown text editor |
@@ -149,15 +151,58 @@ you'd only find out at runtime.
 
 ### electron-builder
 
-Takes the compiled `out/` directory and produces real installers: NSIS `.exe` on Windows, `.dmg` on
-macOS, `.AppImage`/`.deb` on Linux. Also handles code signing, and can publish straight to GitHub
-Releases — which is what the release workflow will use.
+Takes the compiled `out/` directory and produces real distributables: a **portable `.exe`** on
+Windows, `.dmg` on macOS, `.AppImage`/`.deb` on Linux. Also handles code signing (not used here) and
+can publish straight to GitHub Releases — which is what the release workflow will use.
+
+Config lives in `electron-builder.yml`. The pieces worth knowing:
+
+- **`files`** — what actually ships. Only `out/**` and `package.json`; source and the `node_modules`
+  Vite already bundled would just inflate the download.
+- **`extraResources`** — copied next to the app rather than into the bundle, reachable at runtime
+  via `process.resourcesPath`. The tray icon needs this: it must be a real file on disk, so Vite
+  cannot bundle it the way it bundles the renderer's assets.
+- **`win.target: portable`** — a self-extracting archive rather than an installer. See
+  DOCUMENTATION.md §3.6 for why, including the two consequences: no `electron-updater` support, and
+  the need to pin `unpackDirName` so it doesn't unpack to a fresh temp folder on every launch.
+- **`artifactName`** — spelled out rather than derived from `${productName}`, which contains a
+  space. This string becomes the download filename on GitHub Releases.
 
 ### Vitest
 
 Vite-native test runner with a Jest-compatible API (`describe`/`it`/`expect`). It reuses the Vite
-config, so TypeScript and path aliases work without extra setup. Best suited to the pure logic —
-markdown parsing, note sorting, search — rather than to Electron windows.
+config, so TypeScript works without extra setup. No config file is needed here: Vitest looks for
+`vite.config.*`, and this project's is named `electron.vite.config.ts`, so the defaults apply.
+
+Suited to pure logic rather than to Electron windows — which is exactly the constraint that shaped
+`src/main/note-utils.ts`. `notes.ts` imports `electron` at module scope and cannot be loaded outside
+an Electron runtime, so the testable half lives in its own module (DOCUMENTATION.md §3.7).
+
+`npm run test` is deliberately **not** given `--passWithNoTests`. If the suite ever disappears, that
+should fail the build rather than quietly succeed.
+
+### oxlint
+
+The linter — a Rust reimplementation of ESLint's rule set, run as a single binary.
+
+It is here because **ESLint could not be installed**: `typescript-eslint` declares a peer range of
+`>=4.8.4 <6.1.0` and this project is on TypeScript 7. Oxlint parses TypeScript itself, needs no
+TypeScript peer, and pulls in 2 packages rather than ~100 (DOCUMENTATION.md §2.8).
+
+- Config is `.oxlintrc.json`, in **JSONC** — comments are supported and used to justify every
+  suppression.
+- Rules are grouped into **categories** (`correctness`, `suspicious`, `pedantic`, `perf`, `style`,
+  `restriction`, `nursery`). Here `correctness` and `suspicious` are errors; `perf` is advisory.
+- **Plugins are opt-in.** `react` is *off* by default — easy to miss, and it is what provides
+  `react-hooks/exhaustive-deps`. This project enables `typescript`, `unicorn`, `oxc`, `react`,
+  `promise` and `import`, for 265 active rules.
+- **It exits 0 on warnings by default.** `npm run lint` passes `--deny-warnings` so CI can fail.
+- `eslint-disable-next-line` comments are honoured, so existing suppressions keep working.
+- Useful flags: `--fix`, `--print-config` (what's actually enabled), `-f github` (workflow
+  annotations), `--report-unused-disable-directives`.
+
+**Limitation:** no type-aware rules. Those need a real type checker, which is the thing oxlint
+deliberately does without in order to be fast.
 
 ---
 
@@ -247,10 +292,11 @@ then `mermaid.render(id, source)` per diagram, returning `{ svg }`.
 
 | File | Purpose |
 |---|---|
-| `package.json` | Dependencies and the `dev` / `build` / `dist` scripts |
+| `package.json` | Dependencies and the `dev` / `build` / `dist` / `lint` / `test` scripts |
 | `electron.vite.config.ts` | Build config for all three processes |
 | `tsconfig*.json` | Type checking, split by runtime environment |
-| `electron-builder.yml` | Installer/packaging config *(not yet written)* |
+| `electron-builder.yml` | Packaging config — portable `.exe`, `.dmg`, `.AppImage` |
+| `.oxlintrc.json` | Lint rules, categories, plugins, and the reasoning for each suppression |
 | `.github/workflows/*.yml` | CI and release pipelines *(not yet written)* |
 
 ---
@@ -323,6 +369,27 @@ combination is the usual cause, and `globalShortcut.register` returns `false` ra
 ### The tray icon disappears after a few seconds
 
 The `Tray` object was garbage collected. It must be held in a module-scoped variable, not a local.
+
+### `npm error ERESOLVE` when installing anything ESLint-related
+
+```
+peer typescript@">=4.8.4 <6.1.0" from typescript-eslint@8.67.0
+Found: typescript@7.0.2
+```
+
+Not a lockfile problem, and **`--legacy-peer-deps` / `--force` is the wrong fix.** No published
+`typescript-eslint` supports TypeScript 7; forcing it installs a parser built against a compiler API
+that TS 7 replaced. The linter would run, report almost nothing, and be trusted anyway.
+
+This project uses oxlint instead (§2). If you specifically need ESLint, the only clean route is
+pinning TypeScript back to 6.x — which would reintroduce the `baseUrl` behaviour below.
+
+### `Invalid note id` errors when opening a note
+
+Working as designed. Ids are restricted to `[a-z0-9-]{1,64}`, and anything else throws before
+touching the filesystem — this is the path-traversal defence, not a bug. A file added to the notes
+folder by hand with a name like `My Notes.md` or `notes.2026.md` will be listed but will fail to
+open. Rename it to lowercase letters, digits and hyphens.
 
 ---
 

@@ -11,6 +11,9 @@ including future me, who will not remember the reasoning.
 >
 > And **[ROADMAP.md](ROADMAP.md)** — current status, known gaps, and what's next. That one is the
 > *when*, and it's the file to open first when picking the project back up.
+>
+> **[README.md](README.md)** is the front door: what the app is and how to run it. It's written for
+> someone who wants to *use* this; the three documents above are for someone changing it.
 
 ---
 
@@ -63,13 +66,14 @@ gradual accumulation, not any single bad decision.
 
 Done means all of this works and nothing more is built:
 
-- [ ] Global hotkey summons and dismisses the overlay
-- [ ] Type markdown immediately on summon, no clicking required
+- [x] Global hotkey summons and dismisses the overlay
+- [x] Type markdown immediately on summon, no clicking required
 - [ ] Live preview pane, toggleable
 - [ ] Mermaid diagrams render inside the preview
-- [ ] Notes autosave as `.md` files
-- [ ] Browse and search past notes
-- [ ] Cross-platform installers built and released by CI
+- [x] Notes autosave as `.md` files
+- [x] Browse and search past notes
+- [ ] Configurable hotkey and notes folder
+- [ ] Cross-platform builds released by CI
 
 ---
 
@@ -136,6 +140,42 @@ blocks into SVG diagrams.
 **mermaid is by far the largest dependency in the app** — larger than everything else combined.
 It is therefore loaded with a dynamic `import()` that only fires when a note actually contains a
 mermaid block. Notes without diagrams never pay for it. See §3.4.
+
+### 2.7 No auto-updater — a supply-chain decision
+
+`electron-updater` was planned early on. It will not be added. Worth stating the reasoning
+precisely, because "we skipped a dependency" is normally the weaker argument.
+
+An auto-updater is the most dangerous dependency an application can take. An ordinary package runs
+with the privileges of the build; an updater is *designed* to fetch remote code and execute it on
+the user's machine, indefinitely, without asking again. A compromised release of any other package
+harms whoever rebuilds from it. A compromised updater harms everyone who ever installed. Combined
+with §3.6's decision not to code-sign, there would be no second line of defence.
+
+The cost is accepted and real: upgrading means re-downloading the executable. For a single-file
+portable app that is a drag-and-drop.
+
+This generalises into a standing rule. The app currently has **zero runtime dependencies** —
+everything in `package.json` is a `devDependency` that Vite bundles at build time — and that is
+treated as a property worth defending, not an accident. A new runtime dependency needs a reason
+that survives being asked twice.
+
+### 2.8 oxlint, not ESLint
+
+ESLint was the plan. It turned out to be uninstallable: `typescript-eslint` declares a peer range of
+`>=4.8.4 <6.1.0`, and this project is on TypeScript 7 (§2.3). No published version supports it, and
+forcing the resolution would install a parser built against a compiler API that TS 7 replaced —
+producing a linter that runs, reports nothing useful, and is trusted anyway.
+
+Oxlint parses TypeScript natively, needs no TypeScript peer at all, and adds **2 packages instead
+of roughly 100** — which happens to serve §2.7's posture as well.
+
+**The trade-off:** oxlint has no type-aware rules, the class that needs a real type checker. 265
+rules are active, including `react-hooks/exhaustive-deps`. Every suppression in `.oxlintrc.json`
+carries its reasoning inline, because a disabled rule with no explanation is indistinguishable from
+a bug someone gave up on.
+
+Revisit if `typescript-eslint` gains TS 7 support.
 
 ---
 
@@ -221,6 +261,40 @@ the OS supports it, as an enhancement rather than a requirement.
 Motion uses **spring physics**, not duration-based easing. Apple's characteristic feel comes from
 motion that has weight and settles, and it is the single highest-leverage detail in the whole UI.
 
+### 3.6 Portable executable, not an installer
+
+The Windows target is `portable`: a single self-extracting `.exe` with no installer, no Start-menu
+entry and no uninstaller.
+
+The reasoning is that Note Taker is a background utility, and "download one file, double-click, it
+works" is worth more here than integration with the OS's software inventory. It also lets the app
+live on a USB stick or in a synced folder.
+
+Two consequences follow, and they are the reason this is written down:
+
+1. **`electron-updater` cannot update a portable build** — there is no install location to replace.
+   This would have been a genuine tension with auto-update, and §2.7 dissolved it. The two
+   decisions reinforce each other.
+2. **The extraction directory is pinned** (`unpackDirName`). A portable target is a self-extracting
+   archive; left to its default it unpacks ~350 MB to a fresh temp folder on *every* launch.
+
+**Code signing is deliberately skipped.** A certificate is $200–400/year, and an OV certificate
+still has to build SmartScreen reputation from zero. Users will see a SmartScreen warning on first
+run. For a personal project that is accepted, and it is documented in the README rather than hidden.
+
+### 3.7 Pure logic is separated so it can be tested
+
+`notes.ts` imports `electron` at module scope, and `electron` cannot be imported outside an Electron
+runtime. Any test wanting to assert on a string function would first have to mock the module — so
+the pure half moved to `note-utils.ts`: `deriveTitle`, `assertValidId`, `byRecency`.
+
+This is a small structural cost paid for a specific benefit. `assertValidId` is the security
+boundary described in §3.1 — the check that makes path traversal unrepresentable — and a security
+control that is not tested is a claim, not a control. Its tests are written as attacks (traversal,
+absolute paths, UNC paths, null bytes, percent-encoding) rather than as examples.
+
+The same split is what will make the search and markdown logic testable later.
+
 ---
 
 ## 4. Decision log
@@ -233,6 +307,15 @@ motion that has weight and settles, and it is the single highest-leverage detail
 | 2026-08-07 | Mermaid included, lazy-loaded | Settled |
 | 2026-08-07 | Electron over Tauri, size cost accepted | Settled, revisitable (§2.1) |
 | 2026-08-07 | CodeMirror 6 over Monaco/WYSIWYG | Settled |
+| 2026-08-10 | Named **Note Taker** (was "Slate") | Settled |
+| 2026-08-10 | Portable `.exe` over an NSIS installer | Settled (§3.6) |
+| 2026-08-10 | No auto-updater, on supply-chain grounds | Settled (§2.7) |
+| 2026-08-10 | Zero runtime dependencies treated as an invariant | Standing rule (§2.7) |
+| 2026-08-10 | oxlint over ESLint — forced by TypeScript 7 | Settled, revisitable (§2.8) |
+| 2026-08-10 | Hotkey stays `Ctrl+Space` — fewest keys wins | Settled, mitigated by 5.1 |
+| 2026-08-10 | Notes default to `Documents/Note Taker`, changeable in settings | Settled |
+| 2026-08-10 | Settings in a hand-rolled `settings.json`, not `electron-store` | Settled (§2.7) |
+| 2026-08-10 | Public GitHub repository | Settled |
 
 ### Open questions
 
@@ -240,3 +323,6 @@ motion that has weight and settles, and it is the single highest-leverage detail
 - Should the overlay hide automatically when it loses focus? Feels native, but risks vanishing
   mid-thought when you click elsewhere. Needs real-world use to decide.
 - Note identity: filename-as-title, or frontmatter with a stable ID? Affects renaming.
+- `Ctrl+Space` collides with the Windows input-language switcher and with Spotlight on macOS. The
+  fewest-keys argument won for the default; the real fix is the configurable hotkey in Phase 5.1.
+  Whether the *default* should also change is unresolved.

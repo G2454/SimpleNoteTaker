@@ -4,7 +4,8 @@
 largely unverified; not yet on GitHub
 
 Companion documents: **[DOCUMENTATION.md](DOCUMENTATION.md)** (product rules and why each decision
-was made) · **[STACK.md](STACK.md)** (what each tool is, plus troubleshooting).
+was made) · **[STACK.md](STACK.md)** (what each tool is, plus troubleshooting) ·
+**[README.md](README.md)** (the front door — what it is and how to run it).
 
 ---
 
