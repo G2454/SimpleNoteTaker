@@ -40,11 +40,11 @@
     "framer-motion": "^13.0.0",
     "marked": "^18.0.9",
     "mermaid": "^11.16.1",
-    "oxlint": "^1.78.0",
+    "oxlint": "^1.79.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "typescript": "^7.0.2",
     "vite": "^7.3.6",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }
