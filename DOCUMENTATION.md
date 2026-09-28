@@ -68,8 +68,9 @@ Done means all of this works and nothing more is built:
 
 - [x] Global hotkey summons and dismisses the overlay
 - [x] Type markdown immediately on summon, no clicking required
-- [ ] Live preview pane, toggleable
-- [ ] Mermaid diagrams render inside the preview
+- [x] Live preview pane, toggleable
+- [x] Mermaid diagrams render inside the preview
+- [x] A formatting toolbar, so markdown's syntax is something you can click rather than recall
 - [x] Notes autosave as `.md` files
 - [x] Browse and search past notes
 - [ ] Configurable hotkey and notes folder
@@ -141,6 +142,13 @@ blocks into SVG diagrams.
 It is therefore loaded with a dynamic `import()` that only fires when a note actually contains a
 mermaid block. Notes without diagrams never pay for it. See §3.4.
 
+`src/renderer/src/lib/mermaid.ts` holds the only reference to the package anywhere in the codebase,
+which is what makes that guarantee checkable rather than aspirational. It also absorbs mermaid's
+awkwardness: one global config, ids that must be unique per render, and a parser that throws on
+half-finished input — which, in a live preview, is *most* input. Invalid syntax therefore comes back
+as a value to display quietly, never as an exception, and rendered SVG is cached by source and theme
+so that typing elsewhere in a note does not re-lay-out diagrams that did not change.
+
 ### 2.7 No auto-updater — a supply-chain decision
 
 `electron-updater` was planned early on. It will not be added. Worth stating the reasoning
@@ -178,6 +186,95 @@ a bug someone gave up on.
 Revisit if `typescript-eslint` gains TS 7 support.
 
 ---
+
+### 2.9 The preview renders nothing dangerous — by not producing it
+
+Markdown permits raw HTML, `marked` passes it straight through, and the preview puts the result into
+a renderer that holds `window.api` — the capability to read, rewrite and delete every note on disk.
+A note is a plain `.md` file, so its content is not necessarily something the user typed: it can
+arrive from a synced folder, a template, or a download.
+
+The usual answer is to render everything and then clean it up with a sanitizer such as DOMPurify.
+We did the opposite, for two reasons: it needs no new dependency (§2.7), and it removes an entire
+class of bug — the sanitizer and the browser disagreeing about what a string means.
+
+There are exactly two ways note content reaches the output, and both are closed at the source:
+
+1. **Raw HTML.** `renderer.html` escapes it instead of passing it through, so `<script>` appears as
+   visible text. Everything else `marked` emits is a fixed set of tags with escaped contents.
+2. **URLs**, in links and images, checked against a three-scheme allowlist in `shared/urls.ts`.
+
+The second is subtler than it looks, and the tests are written as the published bypasses rather than
+as examples. `java
+script:alert(1)` is not a scheme until the browser strips the newline, so URLs
+are normalised the way the URL parser does *before* being inspected. `&#106;avascript:` is not a
+scheme until the browser decodes the entity — escaping `&` on the way out means it never does.
+
+A refused link is **repaired, not rejected**: the text stays readable, it simply is not a link. That
+matches how the rest of the app treats bad input.
+
+Two further lines of defence, because the renderer is the process assumed to be compromised:
+
+- The main process refuses to navigate the window anywhere (`window.ts`). Following a link in place
+  would replace the app with a web page inside a frameless window with no address bar and no Back
+  button. Links are handed to the OS browser instead, and `shell.openExternal` re-checks the scheme
+  rather than trusting the renderer that asked.
+- The existing Content-Security-Policy limits images to the app itself. A remote image in a note is
+  also a tracking pixel that would report to its host on every preview, so this is deliberate — the
+  preview shows the alt text instead of a broken-image icon, so the refusal is visible rather than
+  looking like a bug.
+
+### 2.10 A formatting toolbar, without becoming a word processor
+
+BR-7 says the markdown source *is* the document, which rules out WYSIWYG — but it never required
+that the user remember the syntax. `**` for bold is easy; the pipes and dashes of a table, and the
+exact spelling of a mermaid fence, are not, and looking them up means leaving the note.
+
+Every button therefore edits the **text**, and the result is markdown the user could have typed by
+hand. Two properties follow from that and are worth stating, because they are what separate a
+toolbar from a nuisance:
+
+- **Toggle, don't accumulate.** Bold on bold text unbolds it; Bullet on a numbered list converts it
+  rather than stacking a second marker. A button that can only add is one you undo by hand.
+- **Do something useful with no selection.** With a bare caret the inline buttons wrap the word
+  underneath, because a toolbar that requires selecting first is a toolbar that is slower than
+  typing the asterisks.
+
+The rules live in `markdown-actions.ts` as a pure function from `(document, selection)` to a
+description of an edit. Nothing in it knows about CodeMirror, so all of its behaviour is tested as
+plain strings, and `Editor.tsx` turns the result into a transaction in six lines.
+
+The diagram button inserts a **working example**, not an empty ` ```mermaid ` fence. An empty fence
+would be correct and useless: mermaid's syntax is precisely the part nobody remembers, so a diagram
+that already appears in the preview is both the feature and its documentation.
+
+### 2.11 Window size: three presets, recomputed per display
+
+A quick note wants a small panel; reading a long one with the preview open wants the screen. So the
+overlay offers Small (the original 760×520), Medium, and Full.
+
+**Presets rather than a resizable window**, which is the part worth justifying. The window is
+created once and kept for the whole session (BR-1), and it is placed on whichever display holds the
+cursor — so it has to be re-fitted on every summon. A freely dragged size would then need to be
+remembered *and* reconciled with whatever display it next appears on: a 2400px-wide window dragged
+out on a 4K monitor is wider than the laptop panel it gets summoned to next. A preset has no such
+problem, because it is not a remembered rectangle but a rule evaluated against the current screen.
+
+The same reasoning rules out remembering the *position*. Both fall out of one function,
+`overlayBounds(size, workArea)`, which clamps the request to the work area and centres it. `Full`
+needs no special case: clamping a request for the whole work area to the whole work area is a no-op.
+It lives in `shared/overlay-size.ts` rather than `window.ts` because that module imports `electron`
+and cannot be loaded in a test.
+
+Two consequences for layout, both fixed rather than lived with:
+
+- The options column is capped at 680px. A settings row puts its label at one edge and its control
+  at the other, which at 1920px is a metre of empty space between the two.
+- The text measure is capped at ~72 characters and **centred**. Off to one side, the empty two
+  thirds of a full-screen panel reads as a bug; in the middle it reads as a page. The cap sits on a
+  wrapper element, not on each block, because `ch` resolves against the font size of the element it
+  is written on — per-block, every heading would get a wider column than its own body text and
+  visibly hang off to the left.
 
 ## 3. Implementation choices
 
@@ -243,6 +340,12 @@ Given §2.1, the runtime size is fixed and the frontend is the only place we con
 1. **`manualChunks`** splits CodeMirror into its own chunk rather than one monolithic bundle.
 2. **Dynamic `import('mermaid')`** defers the largest dependency until a note actually needs it,
    keeping cold start fast for the common case.
+
+**Both are now verified against a production build, not assumed.** The entry chunk's static imports
+are CodeMirror and nothing else; mermaid arrives only on the first preview of a note containing a
+diagram, and splits further into per-diagram-type chunks of its own — a flowchart does not download
+the Gantt or C4 renderers. Measured cold, the first diagram appears about half a second after the
+preview opens, and subsequent ones are served from the SVG cache in `mermaid.ts`.
 
 ### 3.5 Visual approach — "glass" without native blur
 
@@ -371,6 +474,15 @@ both workflows via `node-version-file`, so CI and a developer's machine cannot q
 | 2026-08-10 | Settings in a hand-rolled `settings.json`, not `electron-store` | Settled (§2.7) |
 | 2026-08-10 | Public GitHub repository | Settled |
 | 2026-08-10 | CI on Ubuntu only; packaging matrix reserved for releases | Settled (§3.8) |
+| 2026-09-11 | Markdown safety by **not emitting** raw HTML, rather than sanitizing it | Settled (§2.9) |
+| 2026-09-11 | No DOMPurify — the allowlist is ~40 lines and adds no dependency | Settled (§2.7, §2.9) |
+| 2026-09-11 | Preview links open in the OS browser; the window never navigates | Settled (§2.9) |
+| 2026-09-11 | Remote images stay blocked by CSP — a note's image is also a tracking pixel | Settled, revisitable (§2.9) |
+| 2026-09-11 | Toolbar buttons are text toggles, not rich-text commands | Settled (§2.10) |
+| 2026-09-11 | Preview markup written in a layout effect, not `dangerouslySetInnerHTML` | Settled (see Preview.tsx) |
+| 2026-09-11 | View mode is session state, not a saved setting | Settled |
+| 2026-09-11 | Window size is three presets, not a draggable edge | Settled (§2.11) |
+| 2026-09-11 | Size is recomputed per display on every summon; position is never remembered | Settled (§2.11) |
 | 2026-08-10 | Releases published as drafts, not directly | Settled (§3.8) |
 | 2026-08-10 | Tag must match `package.json` before a release builds | Settled (§3.8) |
 | 2026-08-10 | Actions pinned to commit SHAs, updated by Dependabot | Settled (§3.9) |
@@ -383,7 +495,12 @@ both workflows via `node-version-file`, so CI and a developer's machine cannot q
 - Search: naive full-scan first. Only revisit if it gets slow at realistic note counts.
 - Should the overlay hide automatically when it loses focus? Feels native, but risks vanishing
   mid-thought when you click elsewhere. Needs real-world use to decide.
-- Note identity: filename-as-title, or frontmatter with a stable ID? Affects renaming.
+- ~~Note identity: filename-as-title, or frontmatter with a stable ID?~~ **Resolved 2026-08-27:
+  filename-as-identity.** A note's id is its filename, and renaming renames the file. Frontmatter
+  was rejected because it puts a second source of truth inside the markdown, against BR-7, and
+  because a file called `2026-08-09-2222-de2g.md` defeats BR-3 — the user is supposed to be able to
+  find and recognise their own notes without this app. The cost, accepted knowingly: ids are not
+  stable across renames, so every rename returns the new id and callers must adopt it.
 - `Ctrl+Space` collides with the Windows input-language switcher and with Spotlight on macOS. The
   fewest-keys argument won for the default; the real fix is the configurable hotkey in Phase 5.1.
   Whether the *default* should also change is unresolved.

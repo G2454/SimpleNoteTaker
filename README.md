@@ -26,6 +26,10 @@ thought shouldn't mean alt-tabbing, waiting for an app to load, and finding your
 - **Autosaves** while you type, and always flushes before the panel closes
 - **Plain markdown files** in a normal folder — greppable, syncable, yours
 - **Full-text search** across every note
+- **A formatting toolbar** for the markdown nobody memorises — tables, task lists, code fences —
+  which edits the text itself, so the file stays markdown you could have typed
+- **Live preview**, side by side or full width, with **mermaid diagrams** rendered as you type
+- **Three window sizes** — a small panel for a quick note, or the whole screen when you settle in
 - **Lives in the tray**, not the taskbar. Stays running so the hotkey always works
 
 ## Status
@@ -37,8 +41,8 @@ thought shouldn't mean alt-tabbing, waiting for an app to load, and finding your
 | Markdown editor, note list, search, autosave | ✅ Built, ⚠️ not yet proven in daily use |
 | Lint, tests, typecheck, packaged build | ✅ All green |
 | CI and release pipelines | ✅ Written, ⚠️ not yet run |
-| Markdown preview & mermaid diagrams | ❌ Not started |
-| Settings (custom hotkey, notes folder) | ❌ Not started — both are hardcoded today |
+| Formatting toolbar, markdown preview, mermaid diagrams | ✅ Working, verified end to end |
+| Settings (hotkey, notes folder, theme, window size) | ✅ Working |
 | Published releases | ❌ None yet |
 
 ## Installing
@@ -78,8 +82,13 @@ entry, no uninstaller. Put it wherever you like — including a USB stick — an
 | <kbd>Ctrl</kbd>+<kbd>Space</kbd> | Show / hide the overlay — works from any application |
 | <kbd>Ctrl</kbd>+<kbd>N</kbd> | New note |
 | <kbd>Ctrl</kbd>+<kbd>K</kbd> | Jump to search |
+| <kbd>Ctrl</kbd>+<kbd>E</kbd> | Cycle the view — editor → split → preview |
+| <kbd>Ctrl</kbd>+<kbd>B</kbd> / <kbd>Ctrl</kbd>+<kbd>I</kbd> | Bold / italic the selection, or the word under the cursor |
 | <kbd>Esc</kbd> | Clear the search if it has text — otherwise save and dismiss |
 | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd> | Undo / redo |
+
+Everything else lives on the toolbar above the editor — headings, lists, quotes, links, tables,
+code blocks and diagrams — deliberately, so it can be found by looking rather than remembered.
 
 On macOS, <kbd>Cmd</kbd> substitutes for <kbd>Ctrl</kbd> throughout.
 

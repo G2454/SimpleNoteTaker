@@ -8,6 +8,7 @@ interface NoteListProps {
   onOpen: (id: string) => void
   onDelete: (id: string) => void
   onCreate: () => void
+  onOpenSettings: () => void
   searchRef: React.RefObject<HTMLInputElement | null>
 }
 
@@ -32,6 +33,7 @@ export default function NoteList({
   onOpen,
   onDelete,
   onCreate,
+  onOpenSettings,
   searchRef
 }: NoteListProps): React.JSX.Element {
   return (
@@ -60,7 +62,12 @@ export default function NoteList({
             className={`note-item ${note.id === activeId ? 'note-item--active' : ''}`}
             onClick={() => onOpen(note.id)}
           >
-            <span className="note-item__title">{note.title}</span>
+            {/*
+              The id *is* the name — it's the filename on disk. Showing it here
+              rather than a title derived from the content means the list and
+              the user's file manager agree about what each note is called.
+            */}
+            <span className="note-item__title">{note.id}</span>
             <span className="note-item__meta">{relativeTime(note.updatedAt)}</span>
 
             {/*
@@ -71,7 +78,7 @@ export default function NoteList({
               className="note-item__delete"
               role="button"
               tabIndex={-1}
-              aria-label={`Delete ${note.title}`}
+              aria-label={`Delete ${note.id}`}
               onClick={(event) => {
                 event.stopPropagation() // don't also open the note we're deleting
                 onDelete(note.id)
@@ -87,6 +94,28 @@ export default function NoteList({
         <button type="button" className="new-note" onClick={onCreate}>
           <span>New note</span>
           <kbd>Ctrl N</kbd>
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="Options"
+          title="Options"
+          onClick={onOpenSettings}
+        >
+          {/* Inline SVG rather than an icon font or an emoji: it inherits
+              currentColor, stays crisp at any scale, and adds no dependency. */}
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M8 10.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5Zm0-1.2a1.3 1.3 0 1 0 0-2.6 1.3 1.3 0 0 0 0 2.6Z"
+            />
+            <path
+              fill="currentColor"
+              d="M6.9 1.5h2.2l.3 1.5.9.5 1.4-.6 1.5 2.6-1.1 1v1l1.1 1-1.5 2.6-1.4-.6-.9.5-.3 1.5H6.9l-.3-1.5-.9-.5-1.4.6L2.8 8.5l1.1-1v-1l-1.1-1 1.5-2.6 1.4.6.9-.5.3-1.5Z"
+              opacity="0.9"
+              fillRule="evenodd"
+            />
+          </svg>
         </button>
       </div>
     </aside>

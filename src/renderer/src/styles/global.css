@@ -241,6 +241,9 @@ body {
 }
 
 .sidebar__footer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   padding: 8px;
   border-top: 1px solid var(--separator);
 }
@@ -340,4 +343,672 @@ kbd {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ------------------------------------------------- editable note name */
+
+/*
+ * Invisible until you interact with it. The name sits where a title would, so
+ * it should read as a heading first and reveal itself as editable on hover —
+ * a permanently boxed input in the title bar looks like a form, not a document.
+ */
+.note-name {
+  flex: 1;
+  min-width: 0;
+  margin-right: 12px;
+  padding: 3px 6px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 590;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  outline: none;
+  user-select: text;
+  /* The title bar is a drag region; an input inside it must opt out or it
+     cannot be clicked into. */
+  -webkit-app-region: no-drag;
+  text-overflow: ellipsis;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.note-name:hover {
+  background: var(--control-bg);
+}
+
+.note-name:focus {
+  background: transparent;
+  border-color: var(--accent);
+}
+
+/* ------------------------------------------------------------ controls */
+
+.button {
+  padding: 5px 11px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--control-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  cursor: default;
+  transition: background 0.12s ease;
+}
+
+.button:hover {
+  background: var(--hover);
+}
+
+.link-button {
+  padding: 2px 4px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--accent);
+  background: transparent;
+  border: none;
+  cursor: default;
+  -webkit-app-region: no-drag;
+}
+
+.icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-control);
+  cursor: default;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.icon-button:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+.sidebar__footer .new-note {
+  flex: 1;
+}
+
+/* Hotkey recorder */
+.hotkey {
+  min-width: 132px;
+  padding: 5px 11px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--control-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  cursor: default;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.hotkey--recording {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Segmented control, in the style of a native macOS picker. */
+.segmented {
+  display: flex;
+  padding: 2px;
+  background: var(--control-bg);
+  border-radius: 7px;
+}
+
+.segmented__option {
+  padding: 4px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  cursor: default;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.segmented__option--active {
+  color: var(--text-primary);
+  background: var(--active);
+}
+
+/* Toggle switch */
+.switch {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: default;
+}
+
+.switch__track {
+  width: 38px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--control-bg);
+  border: 1px solid var(--panel-border);
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.switch__track::after {
+  content: '';
+  display: block;
+  width: 18px;
+  height: 18px;
+  margin: 1px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  /* Springy rather than linear — the knob should feel like it snaps across. */
+  transition: transform 0.22s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+.switch input:checked + .switch__track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switch input:checked + .switch__track::after {
+  transform: translateX(16px);
+}
+
+/* -------------------------------------------------------- options screen */
+
+.settings {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 18px 18px;
+  /*
+   * A settings row puts its label at one edge and its control at the other. On
+   * a full-screen panel that is a metre of empty space between the two, and no
+   * way to tell which switch belongs to which label. The column stops growing
+   * long before that becomes a problem.
+   */
+  width: 100%;
+  max-width: 680px;
+  margin-inline: auto;
+}
+
+.settings--loading {
+  padding: 24px 18px;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.settings__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--separator);
+}
+
+.settings__row:last-of-type {
+  border-bottom: none;
+}
+
+.settings__label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.settings__hint {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/*
+ * Long paths get an ellipsis at the *start* via dir="rtl", keeping the folder
+ * name — the useful half — visible.
+ */
+.settings__path {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.settings__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.settings__error {
+  margin-top: 12px;
+  padding: 8px 11px;
+  font-size: 12px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-radius: var(--radius-control);
+}
+
+.settings__footnote {
+  margin-top: 16px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
+/* --------------------------------------------------------- formatting bar */
+
+/*
+ * A single row between the title bar and the writing surface. It is always
+ * present — including in preview mode, where only the view switcher remains —
+ * because a control that disappears is a control the user has to go looking
+ * for, and one that moves is worse.
+ */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--separator);
+  flex-shrink: 0;
+  /* Defensive: the window is a fixed size, but a narrower one must scroll the
+     bar rather than wrap it into two rows and shove the editor down. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Groups are separated by space and a hairline, not by boxes: related buttons
+   read as a set without three more borders on the screen. */
+.toolbar__group {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.toolbar__group + .toolbar__group {
+  margin-left: 5px;
+  padding-left: 6px;
+  border-left: 1px solid var(--separator);
+}
+
+.toolbar__spacer {
+  flex: 1;
+  min-width: 8px;
+}
+
+.toolbar__button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 25px;
+  height: 24px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  cursor: default;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.toolbar__button:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+/* Pressed state: the button should visibly take the click, since its effect
+   happens somewhere else — in the text, possibly below the fold. */
+.toolbar__button:active {
+  background: var(--active);
+}
+
+.toolbar__glyph {
+  font-size: 12.5px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.toolbar__glyph.is-bold {
+  font-weight: 800;
+}
+
+.toolbar__glyph.is-italic {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  font-size: 13.5px;
+}
+
+.toolbar__glyph.is-struck {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.2px;
+}
+
+.toolbar__glyph.is-mono {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: -0.06em;
+}
+
+/* The view switcher reuses the segmented control from the options screen, but
+   at icon size — three words would take a fifth of the bar. */
+.segmented__option--icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 20px;
+  padding: 0;
+}
+
+/* ------------------------------------------------------------- workspace */
+
+.workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.workspace > .editor,
+.workspace > .preview {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.workspace--split > .preview {
+  border-left: 1px solid var(--separator);
+}
+
+/* Display, not unmount: see the comment in App.tsx. */
+.editor--hidden {
+  display: none;
+}
+
+/* --------------------------------------------------------------- preview */
+
+/*
+ * The rendered note. Deliberately close to the editor's own measurements —
+ * same font, same 1.7 line height, same padding and same 72-character measure
+ * — so that switching between the two feels like turning a page over rather
+ * than opening a different application.
+ */
+.preview {
+  overflow-y: auto;
+  padding: 18px 22px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  user-select: text;
+  cursor: auto;
+}
+
+/*
+ * The text column.
+ *
+ * The measure is capped at ~72 characters for readability, and centred rather
+ * than left-aligned: at full screen the cap leaves most of the panel empty, and
+ * emptiness down one side reads as a layout bug where emptiness on both sides
+ * reads as a page. Below about 1100px the cap never binds and none of this has
+ * any effect.
+ *
+ * It sits on a wrapper rather than on each block, because `ch` resolves against
+ * the element's *own* font size — put it on the children and a 1.28em heading
+ * gets a 28% wider column than the paragraph beneath it, and every heading
+ * visibly hangs off the left edge of the text.
+ */
+.preview__doc {
+  max-width: 72ch;
+  margin-inline: auto;
+}
+
+/* Matching the editor's scrollbar, which CodeMirror styles in editor-theme.ts.
+   The default one is a bright slab against a dark panel. */
+.preview::-webkit-scrollbar {
+  width: 10px;
+}
+
+.preview::-webkit-scrollbar-thumb {
+  background: var(--scrollbar);
+  border-radius: 5px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.preview--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  user-select: none;
+}
+
+.preview__doc > * + * {
+  margin-top: 0.85em;
+}
+
+.preview h1,
+.preview h2,
+.preview h3,
+.preview h4,
+.preview h5,
+.preview h6 {
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+/* Headings need air above them and little below: the gap is what groups a
+   heading with the text it belongs to. */
+.preview__doc > h1 + *,
+.preview__doc > h2 + *,
+.preview__doc > h3 + * {
+  margin-top: 0.4em;
+}
+
+.preview__doc > h1,
+.preview__doc > h2,
+.preview__doc > h3,
+.preview__doc > h4 {
+  margin-top: 1.5em;
+}
+
+.preview__doc > :first-child {
+  margin-top: 0;
+}
+
+/* Matching the editor's syntax highlighting exactly, so a heading is the same
+   size whether you are writing it or reading it. */
+.preview h1 {
+  font-size: 1.5em;
+  font-weight: 680;
+}
+
+.preview h2 {
+  font-size: 1.28em;
+  font-weight: 660;
+}
+
+.preview h3 {
+  font-size: 1.12em;
+  font-weight: 640;
+}
+
+.preview h4,
+.preview h5,
+.preview h6 {
+  font-size: 1em;
+  font-weight: 620;
+}
+
+.preview a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.preview strong {
+  font-weight: 700;
+}
+
+.preview del {
+  color: var(--text-tertiary);
+}
+
+.preview ul,
+.preview ol {
+  padding-left: 1.5em;
+}
+
+.preview li + li {
+  margin-top: 0.25em;
+}
+
+.preview li::marker {
+  color: var(--text-tertiary);
+}
+
+/* Task lists lose the bullet — the checkbox is the marker. */
+.preview li:has(> input[type='checkbox']) {
+  list-style: none;
+  margin-left: -1.3em;
+}
+
+.preview input[type='checkbox'] {
+  margin-right: 0.5em;
+  accent-color: var(--accent);
+  vertical-align: middle;
+}
+
+.preview blockquote {
+  padding-left: 0.9em;
+  border-left: 2px solid var(--separator);
+  color: var(--text-secondary);
+}
+
+.preview code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  color: var(--code);
+}
+
+.preview__code {
+  padding: 10px 12px;
+  background: var(--control-bg);
+  border-radius: var(--radius-control);
+  /* Code is the one thing that must not wrap: a broken line is a broken
+     command. It scrolls inside its own box instead. */
+  overflow-x: auto;
+}
+
+.preview__code code {
+  color: var(--text-primary);
+  white-space: pre;
+}
+
+.preview hr {
+  border: none;
+  border-top: 1px solid var(--separator);
+  margin: 1.6em 0;
+}
+
+.preview table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+  font-size: 0.95em;
+}
+
+.preview th,
+.preview td {
+  padding: 5px 10px;
+  border: 1px solid var(--separator);
+  text-align: left;
+}
+
+.preview th {
+  font-weight: 620;
+  background: var(--control-bg);
+}
+
+.preview img {
+  max-width: 100%;
+  border-radius: var(--radius-control);
+}
+
+/*
+ * A link or image whose URL was refused. Shown as ordinary text with a dotted
+ * underline: the words are still the note's content and deleting them would be
+ * worse than showing them, but it should be visible that something was left
+ * out, and hovering says what.
+ */
+.preview__refused {
+  text-decoration: underline dotted var(--text-tertiary);
+  text-underline-offset: 2px;
+  cursor: help;
+}
+
+/* --------------------------------------------------------------- diagrams */
+
+.preview__diagram {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px;
+  background: var(--control-bg);
+  border-radius: var(--radius-control);
+  overflow-x: auto;
+}
+
+.preview__diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Before it renders — and if it never does — the diagram falls back to being
+   an ordinary code block. The source is still the most useful thing to show. */
+.preview__diagram-source {
+  align-self: stretch;
+  margin: 0;
+  overflow-x: auto;
+  color: var(--text-secondary);
+}
+
+.preview__diagram-source code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--text-secondary);
+  white-space: pre;
+}
+
+/*
+ * Invalid syntax is the normal state while you are still typing a diagram, so
+ * this is a note rather than an error: no red, no icon, no border. It says
+ * what mermaid could not parse and gets out of the way.
+ */
+.preview__diagram-error {
+  align-self: stretch;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--separator);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
 }

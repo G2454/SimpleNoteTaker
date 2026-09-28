@@ -27,6 +27,10 @@ export const editorTheme = EditorView.theme({
   '.cm-content': {
     // Long lines are hard to read. ~72 characters is the usual comfortable max.
     maxWidth: '72ch',
+    // Centred so the writing column stays in the middle of a full-screen
+    // panel rather than hugging the left edge. At the smaller sizes the cap
+    // never binds, so this has no effect there.
+    marginInline: 'auto',
     padding: 0,
     caretColor: 'var(--accent)'
   },

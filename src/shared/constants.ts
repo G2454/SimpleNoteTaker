@@ -27,8 +27,45 @@ export const IPC = {
   notesCreate: 'notes:create',
   notesDelete: 'notes:delete',
   notesSearch: 'notes:search',
-  notesRevealFolder: 'notes:reveal-folder'
+  notesRename: 'notes:rename',
+  notesRevealFolder: 'notes:reveal-folder',
+
+  settingsGet: 'settings:get',
+  settingsUpdate: 'settings:update',
+  settingsChooseFolder: 'settings:choose-folder',
+
+  /** Hands a link from the preview to the user's browser. See `shared/urls.ts`. */
+  shellOpenExternal: 'shell:open-external',
+
+  /** Main -> renderer: the tray asked for the options screen. */
+  openSettings: 'ui:open-settings'
 } as const
 
 /** How long typing must pause before an autosave fires. */
 export const AUTOSAVE_DEBOUNCE_MS = 500
+
+/**
+ * How long typing must pause before the preview re-renders.
+ *
+ * Short: parsing markdown is cheap, and a preview that visibly lags behind the
+ * cursor feels broken rather than efficient.
+ */
+export const PREVIEW_DEBOUNCE_MS = 150
+
+/**
+ * How long before an unseen diagram is laid out.
+ *
+ * Longer than the preview, because it costs more and because a diagram is
+ * unparseable for most of the time you spend writing one — re-running the
+ * layout engine on every half-finished arrow would waste the work and flicker.
+ */
+export const DIAGRAM_DEBOUNCE_MS = 300
+
+/** Longest note name we accept, in characters. */
+export const MAX_NOTE_NAME_LENGTH = 80
+
+/** Name given to a note the user hasn't named yet. */
+export const DEFAULT_NOTE_NAME = 'Untitled'
+
+/** Longest derived title we keep, in characters. Titles are previews, not names. */
+export const MAX_TITLE_LENGTH = 80

@@ -149,6 +149,63 @@ The project has three configs because main and renderer run in different worlds:
 With a single shared config, TypeScript would autocomplete `document` inside your main process and
 you'd only find out at runtime.
 
+### Testing — the conventions
+
+Vitest, Node environment, no jsdom. **196 tests across 6 files.** Two rules shape almost every
+decision here.
+
+**1. Anything importing `electron` cannot be tested directly.**
+
+`import { app } from 'electron'` fails outside a real Electron runtime, and it fails at *module
+load*, so the whole file becomes untestable — including the pure string function you actually
+wanted to check. The project's answer is to split the logic out:
+
+| Module (imports `electron`) | Its testable half |
+|---|---|
+| `notes.ts` | `note-utils.ts` — names, titles, collisions |
+| `ipc.ts` | `ipc-validation.ts` — payload shape checking |
+
+**Follow this when adding a module.** If a function is worth testing and its file touches
+`electron`, move the function, not the test.
+
+Where the Electron surface is small and genuinely part of the behaviour, mock it instead:
+
+```ts
+// vi.mock factories are hoisted ABOVE the imports, so a plain `let` would still
+// be in its temporal dead zone when the factory runs. vi.hoisted exists for this.
+const state = vi.hoisted(() => ({ dir: '' }))
+vi.mock('./settings', () => ({ notesDirectory: () => state.dir }))
+vi.mock('electron', () => ({ shell: { openPath: vi.fn() } }))
+```
+
+**2. Storage is tested against a real temporary directory, not a mocked filesystem.**
+
+The failures that matter in `notes.ts` are not logic errors — they are what ends up on disk.
+Does a rename leave the old file behind? Does a collision overwrite a note? Does a crafted id
+escape the folder? A mocked `fs` would assert that we *called* `rename`, which was never the part
+in doubt. So `notes.test.ts` does `mkdtemp` in `beforeEach`, `rm` in `afterEach`, and reads the
+directory back to check.
+
+**Module-level caches need `vi.resetModules()`.** `settings.ts` caches in module scope so
+`notesDirectory()` can stay synchronous; tests re-import it per case to get a clean one:
+
+```ts
+async function freshSettings() {
+  vi.resetModules()
+  return import('./settings')
+}
+```
+
+**Security tests are written as attacks, not examples.** `assertValidId` guards the boundary
+between a renderer displaying arbitrary text and the user's filesystem, so its tests read as a
+list of things an attacker would try — traversal, absolute and UNC paths, null bytes, NTFS
+alternate data streams, reserved device names. The containment check is additionally exercised
+*through the real API* (`readNote('../outside')`), because that is what proves the guard is wired
+in on every path — which is the part regressions actually break.
+
+`npm run test` deliberately does **not** pass `--passWithNoTests`: if the suite ever vanishes, that
+should fail the build rather than quietly succeed.
+
 ### electron-builder
 
 Takes the compiled `out/` directory and produces real distributables: a **portable `.exe`** on
@@ -174,12 +231,12 @@ Vite-native test runner with a Jest-compatible API (`describe`/`it`/`expect`). I
 config, so TypeScript works without extra setup. No config file is needed here: Vitest looks for
 `vite.config.*`, and this project's is named `electron.vite.config.ts`, so the defaults apply.
 
-Suited to pure logic rather than to Electron windows — which is exactly the constraint that shaped
-`src/main/note-utils.ts`. `notes.ts` imports `electron` at module scope and cannot be loaded outside
-an Electron runtime, so the testable half lives in its own module (DOCUMENTATION.md §3.7).
+Useful extras this project leans on: `vi.mock` for replacing `electron`, `vi.hoisted` for values a
+mock factory needs, and `vi.resetModules` for modules that cache in module scope.
 
-`npm run test` is deliberately **not** given `--passWithNoTests`. If the suite ever disappears, that
-should fail the build rather than quietly succeed.
+**How the project actually uses it — the split-for-testability rule, the temp-directory approach to
+storage, and why security tests are written as attacks — is in §"Testing — the conventions" above.**
+That is the part to read before adding a test.
 
 ### oxlint
 
@@ -264,9 +321,12 @@ otherwise React would remove it from the DOM instantly.
 Markdown → HTML. Small, fast, and extensible via a renderer/plugin hook, which is how we intercept
 ` ```mermaid ` fenced blocks before they become ordinary `<pre><code>`.
 
-> **Security note for later:** `marked` output goes into the DOM. Since markdown allows raw HTML,
-> a note containing `<script>` is a real (if self-inflicted) XSS vector. Before shipping, either
-> sanitize the output or disable raw HTML in the parser.
+> **Resolved.** `marked` output goes into the DOM, and markdown allows raw HTML, so a note
+> containing `<script>` was a real XSS vector — and notes are files, which can arrive from a synced
+> folder or a download rather than from the user's own keyboard. The second option was taken: the
+> parser never emits raw HTML at all. `markdown-render.ts` overrides `renderer.html` to escape it,
+> and `renderer.link` / `renderer.image` to check URLs against the allowlist in `shared/urls.ts`.
+> Nothing to sanitize afterwards, and no new dependency. See DOCUMENTATION.md §2.9.
 
 ### mermaid
 
@@ -417,21 +477,45 @@ migration to plan rather than a PR to merge.
 
 ## 8. Troubleshooting
 
-### `Error: Electron uninstall` when running `npm run dev`
+### `Error: Electron uninstall`
 
-The `electron` npm package is only a small wrapper; the actual ~100MB Chromium binary is fetched by
-a **postinstall script**. If that step is skipped or blocked (offline, proxy, `--ignore-scripts`,
-a restricted CI runner), `node_modules/electron/` will have no `dist/` folder and no `path.txt`,
-and electron-vite reports it as "uninstall".
+Appears on `npm run dev`, `npm run start`, or any electron-vite command. It comes from
+`getElectronPath()` and always means the same thing: **the Electron binary is missing.**
 
-Fix — re-run the download without reinstalling everything:
+The `electron` npm package is only a small wrapper. The actual ~215MB binary is fetched separately
+by a **postinstall script**, and it is not tracked by `package-lock.json` — so npm believes the
+package is correctly installed whether or not the binary is there.
+
+Diagnose:
+
+```bash
+cat node_modules/electron/path.txt      # should print: electron.exe
+ls   node_modules/electron/dist         # should list electron.exe and friends
+```
+
+Fix — re-run just the download, without reinstalling anything else:
 
 ```bash
 node node_modules/electron/install.js
 ```
 
-Verify with `ls node_modules/electron/dist`. This is also worth knowing for CI, where the download
-is the slowest part of a cold build and the first thing to cache.
+**This is usually instant and works offline.** The installer checks
+`~/AppData/Local/electron/Cache` (`~/Library/Caches/electron` on macOS,
+`~/.cache/electron` on Linux) first, and only downloads if the zip isn't already there.
+
+**Why it recurs.** Any of these leave the wrapper in place but the binary gone:
+
+- `npm ci`, which deletes `node_modules` wholesale before reinstalling
+- an interrupted or network-flaky `npm install`
+- `--ignore-scripts`, or a CI runner that disables lifecycle scripts
+- disk-cleanup tools, which target large binaries inside `node_modules`
+
+Because the binary is invisible to the lockfile, `npm install` will often report "up to date" and
+change nothing. Running `install.js` directly is the reliable repair, and it is worth reaching for
+before anything more drastic like deleting `node_modules`.
+
+For CI, this download is the slowest part of a cold build — cache the Electron cache directory,
+not just `node_modules`.
 
 ### `error TS5102: Option 'baseUrl' has been removed`
 
@@ -481,6 +565,19 @@ that TS 7 replaced. The linter would run, report almost nothing, and be trusted 
 
 This project uses oxlint instead (§2). If you specifically need ESLint, the only clean route is
 pinning TypeScript back to 6.x — which would reintroduce the `baseUrl` behaviour below.
+
+### macOS release build fails: `image must be at least 512x512`
+
+`build/icon.png` was 256×256. Linux and Windows accept that — Linux uses the PNG directly, Windows
+uses `build/icon.ico` — but macOS needs to generate an `.icns`, and electron-builder refuses to do
+that from anything under **512×512**.
+
+The failure mode is worth recognising: **the Linux job succeeds and publishes while macOS fails**,
+so a release appears with one of three artifacts and no obvious explanation. That is `fail-fast:
+false` behaving correctly, not a pipeline bug.
+
+`build/icon.png` is now 1024×1024. If you replace it, keep it at 1024: it is the source for the
+macOS `.icns` and the Linux icon, and 1024 is the largest size macOS asks for.
 
 ### `npm error ERESOLVE` — `electron-vite` vs. Vite 8
 

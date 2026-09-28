@@ -1,37 +1,67 @@
-import { basename, join } from 'node:path'
-import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
-import { app, shell } from 'electron'
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { shell } from 'electron'
+import { DEFAULT_NOTE_NAME } from '../shared/constants'
 import type { Note, NoteMeta } from '../shared/types'
-import { assertValidId, byRecency, deriveTitle } from './note-utils'
+import { assertValidId, deriveTitle, nextAvailableName, sanitizeNoteName } from './note-utils'
+import { byRecency } from '../shared/sorting'
+import { notesDirectory } from './settings'
 
 /**
- * Note storage: one markdown file per note, in a normal folder (BR-3).
+ * Note storage: one markdown file per note, in a folder the user chooses (BR-3).
  *
  * Everything here runs in the main process. The renderer never sees a path and
  * has no way to construct one — see `assertValidId` in `./note-utils`, which
  * holds the pure logic so it can be unit tested without an Electron runtime.
+ *
+ * A note's id *is* its filename, which is also its display name. Renaming a
+ * note therefore renames the file: what you see in the app is what you see in
+ * Explorer. The cost is that ids are not stable across renames, so every
+ * rename returns the new id and callers must adopt it.
  */
 
 const EXTENSION = '.md'
 
-/**
- * Default location. Documents rather than the app's private userData folder,
- * because BR-3 says the user owns these files: they should be easy to find,
- * back up, and sync without knowing anything about Electron.
- */
-function notesDir(): string {
-  return join(app.getPath('documents'), 'Note Taker')
-}
-
 async function ensureNotesDir(): Promise<string> {
-  const dir = notesDir()
+  const dir = notesDirectory()
   await mkdir(dir, { recursive: true })
   return dir
 }
 
+/**
+ * Builds the path for a note id, refusing anything that escapes the folder.
+ *
+ * Two independent checks, deliberately:
+ *
+ *  1. `assertValidId` rejects the *shape* of a dangerous name. It is readable
+ *     and unit-tested, and it produces the error the user would see.
+ *  2. The containment check below verifies the *result* — that the resolved
+ *     path really is a direct child of the notes directory. This is the check
+ *     that holds even if rule 1 has a gap, and it costs nothing.
+ *
+ * `relative()` is the reliable way to express this: any escape produces a path
+ * starting with `..`, and any nesting introduces a separator.
+ */
 function pathFor(id: string): string {
   assertValidId(id)
-  return join(notesDir(), id + EXTENSION)
+
+  const dir = notesDirectory()
+  const full = resolve(dir, id + EXTENSION)
+  const rel = relative(dir, full)
+
+  if (rel.startsWith('..') || isAbsolute(rel) || rel.includes(sep)) {
+    throw new Error(`Refusing to leave the notes folder: ${JSON.stringify(id)}`)
+  }
+  return full
+}
+
+/** Just the ids, for collision checks. Cheaper than `readAll` — no file reads. */
+async function listIds(): Promise<string[]> {
+  const dir = await ensureNotesDir()
+  const entries = await readdir(dir, { withFileTypes: true })
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(EXTENSION))
+    .map((entry) => basename(entry.name, EXTENSION))
 }
 
 /** Every note with its content, newest first. The shared basis for list and search. */
@@ -53,8 +83,10 @@ async function readAll(): Promise<Note[]> {
   return notes.sort(byRecency)
 }
 
+const toMeta = ({ id, title, updatedAt }: Note): NoteMeta => ({ id, title, updatedAt })
+
 export async function listNotes(): Promise<NoteMeta[]> {
-  return (await readAll()).map(({ id, title, updatedAt }) => ({ id, title, updatedAt }))
+  return (await readAll()).map(toMeta)
 }
 
 /**
@@ -74,9 +106,13 @@ export async function searchNotes(query: string): Promise<NoteMeta[]> {
   return (await readAll())
     .filter(
       (note) =>
-        note.title.toLowerCase().includes(needle) || note.content.toLowerCase().includes(needle)
+        // The name is searched too — it is the thing the user chose, so it is
+        // often what they remember.
+        note.id.toLowerCase().includes(needle) ||
+        note.title.toLowerCase().includes(needle) ||
+        note.content.toLowerCase().includes(needle)
     )
-    .map(({ id, title, updatedAt }) => ({ id, title, updatedAt }))
+    .map(toMeta)
 }
 
 export async function readNote(id: string): Promise<Note> {
@@ -87,31 +123,47 @@ export async function readNote(id: string): Promise<Note> {
 
 export async function writeNote(id: string, content: string): Promise<NoteMeta> {
   await ensureNotesDir()
-  const path = pathFor(id)
-  await writeFile(path, content, 'utf8')
+  await writeFile(pathFor(id), content, 'utf8')
   return { id, title: deriveTitle(content), updatedAt: Date.now() }
 }
 
 /**
- * IDs are timestamp-based: sortable, human-readable, and collision-free within
- * a second thanks to the random suffix. They are never derived from the note's
- * text, so renaming a heading can never move or clobber a file.
+ * Creates an empty note.
+ *
+ * Named rather than timestamped: the filename is what the user sees both in the
+ * app and in their file manager, and `2026-08-09-2222-de2g.md` is meaningless
+ * in either place. Collisions get a numeric suffix, so creating three unnamed
+ * notes gives "Untitled", "Untitled 2", "Untitled 3".
  */
-export async function createNote(): Promise<Note> {
-  await ensureNotesDir()
-
-  const now = new Date()
-  const stamp = [
-    now.getFullYear(),
-    String(now.getMonth() + 1).padStart(2, '0'),
-    String(now.getDate()).padStart(2, '0'),
-    String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0')
-  ].join('-')
-  const suffix = Math.random().toString(36).slice(2, 6)
-  const id = `${stamp}-${suffix}`
-
+export async function createNote(name: string = DEFAULT_NOTE_NAME): Promise<Note> {
+  const id = nextAvailableName(sanitizeNoteName(name), await listIds())
   await writeNote(id, '')
-  return { id, title: 'Untitled', updatedAt: Date.now(), content: '' }
+  return { id, title: deriveTitle(''), updatedAt: Date.now(), content: '' }
+}
+
+/**
+ * Renames a note by renaming its file.
+ *
+ * On a collision the new name gets a numeric suffix rather than an error or an
+ * overwrite. Overwriting would destroy a note — unacceptable under BR-6 — and
+ * erroring would leave the user to invent a unique name themselves. The
+ * resulting id is returned, so the UI can show what the note is actually called.
+ */
+export async function renameNote(id: string, requestedName: string): Promise<NoteMeta> {
+  const desired = sanitizeNoteName(requestedName)
+  const from = pathFor(id)
+
+  // A no-op rename still has to report the current state, and `fs.rename` onto
+  // itself is not reliably a no-op across platforms.
+  if (desired === id) return toMeta(await readNote(id))
+
+  // Exclude this note from the collision check, case-insensitively: renaming
+  // "notes" to "Notes" is a legitimate change of capitalisation, not a clash.
+  const taken = (await listIds()).filter((other) => other.toLowerCase() !== id.toLowerCase())
+  const target = nextAvailableName(desired, taken)
+
+  await rename(from, pathFor(target))
+  return toMeta(await readNote(target))
 }
 
 export async function deleteNote(id: string): Promise<void> {

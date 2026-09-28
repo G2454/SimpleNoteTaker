@@ -1,6 +1,6 @@
 # Note Taker — Roadmap & Status
 
-**Last updated:** 2026-08-10 · **Version:** 0.1.0 · **Status:** Phases 1, 3 and 4 built;
+**Last updated:** 2026-08-27 · **Version:** 0.1.0 · **Status:** Phases 1, 3 and 4 built;
 public at [G2454/SimpleNoteTaker](https://github.com/G2454/SimpleNoteTaker). Nothing has been
 run end to end yet — neither the app nor the pipeline.
 
@@ -21,8 +21,10 @@ was made) · **[STACK.md](STACK.md)** (what each tool is, plus troubleshooting) 
 | Markdown editor | ✅ Code complete, ⚠️ unverified |
 | Note list & search | ✅ Code complete, ⚠️ unverified |
 | Packaging (portable `.exe`) | ✅ Done |
-| Preview & Mermaid | ❌ Not started |
-| Linting & tests | ✅ Done — `lint`, `test`, `typecheck`, `build` all green |
+| Rename notes (file rename) | ✅ Code complete, ⚠️ unverified |
+| Options screen (hotkey, folder, theme, startup) | ✅ Code complete, ⚠️ unverified |
+| Preview & Mermaid | ✅ Done — toolbar, split preview, diagrams; **verified running** |
+| Linting & tests | ✅ Done — 370 tests; `lint`, `test`, `typecheck`, `build` all green |
 | CI/CD | ✅ Written, ⚠️ **never run** |
 | Auto-update | ⛔ **Removed from scope** — see §5 |
 
@@ -53,14 +55,21 @@ waiting on the same thing: someone actually running them.
 - **Alt+F4 hides rather than closes**, so the window is never destroyed accidentally
 
 ### Tray ([src/main/tray.ts](src/main/tray.ts))
-- Show/hide, **Start with Windows** toggle, and Quit — the app's only visible surface
+- Show/hide, **Options…**, **Start with Windows** toggle, and Quit — the app's only visible surface
+- The menu is rebuilt when settings change; Electron menus are immutable snapshots, so it would
+  otherwise keep showing the hotkey that was current at startup
 - Icon generated programmatically and committed at [resources/tray.png](resources/tray.png)
 
 ### Storage ([src/main/notes.ts](src/main/notes.ts))
-- One `.md` file per note in `Documents/Note Taker`
-- `list` / `read` / `write` / `create` / `delete` / `revealFolder`
-- **Path traversal made unrepresentable** — ids are restricted to `[a-z0-9-]`, an alphabet with no
-  separator, dot, or drive letter
+- One `.md` file per note, in `Documents/Note Taker` by default and anywhere the user picks
+- `list` / `read` / `write` / `create` / `rename` / `delete` / `search` / `revealFolder`
+- **A note's id is its filename**, so renaming a note renames the file (BR-3)
+- **Path traversal blocked twice over.** `assertValidId` rejects the *shape* of a dangerous name —
+  path separators, `..`, leading dots, Windows-forbidden characters, control characters, reserved
+  device names (`NUL`, `CON`, `COM1`…), and names Windows would silently alter. Then `pathFor`
+  verifies the *result*: the resolved path must be a direct child of the notes folder. The first
+  check is the readable one; the second is the guarantee
+- User input is repaired rather than rejected — `sanitizeNoteName` turns `Q3: Plan` into `Q3 Plan`
 - Titles derived from content, never stored, so external edits can't desync them
 - IPC arguments validated at runtime ([src/main/ipc.ts](src/main/ipc.ts)) — types don't cross
   the process boundary
@@ -70,8 +79,9 @@ waiting on the same thing: someone actually running them.
 - Event subscriptions return unsubscribe functions for React strict mode
 
 ### Renderer
-- Placeholder panel with a spring entrance animation that replays on each summon
-- Glass styling with light/dark support; CSP set in `index.html`
+- Panel with a spring entrance animation that replays on each summon
+- CodeMirror editor, note list, search, in-place rename, and the Options screen
+- Glass styling with light/dark/system support; CSP set in `index.html`
 
 ### Packaging
 - `electron-builder` configured; **working 90 MB portable Windows `.exe`** produced —
@@ -88,20 +98,24 @@ waiting on the same thing: someone actually running them.
 Small, real, and worth fixing before CI — a pipeline that runs broken scripts is worse than none.
 
 - [x] ~~`npm run lint` fails~~ — now runs oxlint, clean
-- [x] ~~`npm run test` fails~~ — 29 tests, passing
+- [x] ~~`npm run test` fails~~ — 196 tests, passing
 - [x] ~~`electron-updater` is not installed, though auto-update is planned~~ — auto-update is no
       longer planned, so this is resolved rather than outstanding
 - [ ] **Renderer bundle is now ~1.77 MB** across two chunks: ~888 kB app (mostly `framer-motion`)
       and ~878 kB CodeMirror. The latter is inflated because `@codemirror/lang-markdown` drags in
       the HTML, JavaScript and CSS grammars (see STACK.md §3). `LazyMotion` should cut the first;
       the second would need the editor itself to be lazy-loaded
-- [ ] **No way to change the hotkey or notes folder** — both are hardcoded constants
+- [x] ~~No way to change the hotkey or notes folder~~ — both are configurable in Options (Phase 5.1)
 - [ ] **Vite is pinned to 7 by `electron-vite`.** Its latest stable (5.0.0) peers on
       `vite ^5 || ^6 || ^7`; Vite 8 support is only in `electron-vite@6.0.0-beta.1`, and
       `@vitejs/plugin-react@6` hard-requires Vite 8, so the three move as a set. Dependabot ignores
       majors for `vite` and `@vitejs/plugin-react` until electron-vite 6 is stable — revisit then
-- [ ] **Markdown is not sanitized.** Not exploitable yet (nothing renders it), but `marked` output
-      goes straight into the DOM, and markdown permits raw HTML. Must be handled in Phase 2.
+- [x] ~~**Markdown is not sanitized.**~~ — closed in Phase 2. The renderer never *emits*
+      dangerous HTML rather than emitting it and cleaning up afterwards: raw HTML is escaped to
+      text, and link and image URLs are checked against a scheme allowlist
+      ([src/shared/urls.ts](src/shared/urls.ts)). 49 tests written as attacks cover it, including
+      the encoded-scheme bypasses. Navigation is refused in the main process as a second line
+      ([window.ts](src/main/window.ts))
 
 ### Needs manual verification
 
@@ -139,12 +153,27 @@ Follow-ups this phase created:
 
 ### Phase 2 — Rendering
 
-- [ ] **2.1** Preview pane using `marked`, toggleable, split view
-- [ ] **2.2** **Sanitize markdown output** — closes the XSS gap above
-- [ ] **2.3** Mermaid via dynamic `import()`, so only notes containing diagrams pay for it
-- [ ] **2.4** Debounce diagram re-render (~300ms) and show invalid syntax quietly
-- [ ] **2.5** Theme mermaid to match the panel
-- [ ] **2.6** Verify the lazy chunk actually splits in the production build
+- [x] **2.1** Preview pane using `marked` — three modes (edit / split / preview) on a segmented
+      control and `Ctrl+E`, in [Preview.tsx](src/renderer/src/components/Preview.tsx)
+- [x] **2.2** **Sanitize markdown output** — see the closed item above
+- [x] **2.3** Mermaid via dynamic `import()`; it is the only reference to the package in the app
+- [x] **2.4** Diagrams debounce at 300ms, cache by source, and report invalid syntax as a muted
+      line under the source rather than an error box — half-typed syntax is the normal state
+- [x] **2.5** Mermaid themed from the panel's own palette, redrawn when light/dark changes
+- [x] **2.6** Verified: the entry chunk statically imports only CodeMirror, and mermaid arrives as
+      a separate chunk on first preview of a note containing a diagram
+
+### Phase 2b — Formatting toolbar *(added, not originally planned)*
+
+- [x] 14 buttons for the markdown people do not memorise — heading, bold, italic, strikethrough,
+      inline code, three list kinds, quote, link, code block, table, rule, diagram
+- [x] Every button is a **toggle over the text**, not a rich-text command: pressing Bold on bold
+      text unbolds it, and Bullet on a numbered list converts it (BR-7 holds — the file stays
+      markdown you could have typed)
+- [x] The edit logic is a pure function of `(document, selection)` in
+      [markdown-actions.ts](src/renderer/src/lib/markdown-actions.ts), so all 41 of its cases are
+      tested as strings with no editor and no DOM
+- [x] `Ctrl+B` / `Ctrl+I` bound in the editor; everything else is discoverable by looking at it
 
 ### Phase 3 — Quality gates *(prerequisite for CI)* — ✅ done 2026-08-10
 
@@ -153,14 +182,29 @@ Follow-ups this phase created:
       can be installed without forcing a resolution npm calls "potentially broken". Oxlint parses
       TypeScript natively, needs no TypeScript peer, and adds 2 packages rather than ~100.
       Config and every suppression's reasoning live in [.oxlintrc.json](.oxlintrc.json)
-- [x] **3.2** First Vitest tests — 29 of them, covering `deriveTitle`, `byRecency`, and
-      `assertValidId`. The last is written as attacks rather than examples: traversal, absolute
-      paths, UNC paths, null bytes, percent-encoding
+- [x] **3.2** Vitest tests — **196 across 6 files**, covering every non-UI module.
+      `assertValidId` is written as attacks rather than examples: traversal, absolute paths, UNC
+      paths, null bytes, NTFS streams, reserved device names, percent-encoding
+- [x] **3.5** Storage covered by **integration tests against a real temp directory**
+      ([notes.test.ts](src/main/notes.test.ts)) rather than a mocked filesystem. The failures that
+      matter here are what lands on disk — whether a rename leaves the old file behind, whether a
+      collision overwrites a note — and a mock would only assert that we *called* rename, which was
+      never the part in doubt. Each run gets a private parent directory rather than using the
+      system temp folder directly: the containment test compares the parent before and after an
+      escape attempt, which raced every other test file — and every other process on the machine —
+      to create a directory between the two reads. It failed roughly half the time
+- [x] **3.6** Settings covered against corrupt, partial and hostile files
+      ([settings.test.ts](src/main/settings.test.ts)) — truncated JSON, wrong types, relative
+      paths, a JSON array where an object belongs. The bar for each is that the app still boots
+- [x] **3.7** IPC payload validation covered ([ipc-validation.test.ts](src/main/ipc-validation.test.ts))
+      including prototype-pollution attempts, since these run on input from the renderer
 - [x] **3.3** `npm run test` passes. Deliberately *not* passing `--passWithNoTests`: if the suite
       ever disappears, that should fail the build rather than quietly succeed
-- [x] **3.4** Pure logic split into [note-utils.ts](src/main/note-utils.ts) — `notes.ts` imports
-      `electron` at module scope, which cannot load outside an Electron runtime, so the testable
-      half had to stop living next to it
+- [x] **3.4** Pure logic split from Electron-importing modules — now a **project convention**,
+      not a one-off. `notes.ts` → [note-utils.ts](src/main/note-utils.ts), `ipc.ts` →
+      [ipc-validation.ts](src/main/ipc-validation.ts). Anything importing `electron` at module
+      scope cannot load outside an Electron runtime, so the logic worth testing moves next door.
+      See STACK.md §"Testing" before adding a module
 
 **Trade-off accepted:** oxlint has no type-aware rules (those needing a type checker). Revisit if
 `typescript-eslint` gains TS 7 support.
@@ -187,8 +231,10 @@ Follow-ups this phase created:
 - [ ] **4.7** Branch protection requiring CI to pass — **must be done in the GitHub UI**, it is not
       a file in the repo. Settings → Branches → Add rule for `main` → *Require status checks to
       pass* → select `Typecheck, lint, test, build`
-- [ ] **4.10** Verify the pipeline actually runs. Nothing here has executed yet; workflow YAML is
-      the classic thing that is only correct on the third attempt
+- [~] **4.10** Verify the pipeline actually runs. **First release attempt (v0.2.0) published only
+      the Linux AppImage.** Cause found for macOS: `build/icon.png` was 256×256 and macOS needs
+      ≥512 to generate an `.icns` — now 1024×1024. Windows cause still unconfirmed. `fail-fast:
+      false` worked as intended: one platform's failure did not discard the others
 
 **Deliberately skipped:** code signing. A certificate costs $200–400/year and OV certs need to
 build SmartScreen reputation regardless. Users will see a SmartScreen warning; that is accepted.
@@ -197,20 +243,38 @@ build SmartScreen reputation regardless. Users will see a SmartScreen warning; t
 
 ### Phase 5 — Polish
 
-- [ ] **5.1** Settings panel: custom hotkey, notes folder location, launch-at-login, hide-on-blur.
-      Opened with `Ctrl+,` *inside* the overlay rather than as a second window (BR-4, keyboard-first)
-- [ ] **5.2** Persist settings in a hand-rolled `settings.json` — **not** `electron-store`, which is
-      a dependency's worth of supply-chain surface for ~40 lines of code (§5). Written to
+- [~] **5.1** Options screen — ⚠️ built, unverified. Custom hotkey (recorded by pressing the
+      combination), notes folder, appearance (System/Light/Dark), and launch-at-login. Opened with
+      `Ctrl+,` *inside* the overlay rather than as a second window (BR-4, keyboard-first), and also
+      from the tray's "Options…" item. **`hide-on-blur` is not included** — still an open question
+      under 5.3
+- [x] **5.2** Settings persisted in a hand-rolled `settings.json` — **not** `electron-store`, which
+      is a dependency's worth of supply-chain surface for ~40 lines of code (§5). Written to
       `PORTABLE_EXECUTABLE_DIR` when set, else `app.getPath('userData')`, so a portable copy on a
       USB stick carries its own configuration
-- [ ] **5.2b** Notes folder **defaults to `Documents/Note Taker`** and is changeable in settings
+- [x] **5.2b** Notes folder **defaults to `Documents/Note Taker`** and is changeable in Options
       *(decided 2026-08-10)*. Rejected: defaulting next to the `.exe`, because that path is often
-      unwritable and is not somewhere a person would think to look for their own files (BR-3)
+      unwritable and is not somewhere a person would think to look for their own files (BR-3).
+      Changing it re-points the app; existing notes are **not** moved, which the screen says plainly
+- [x] **5.2c** Notes are **named, not timestamped**. A note's id *is* its filename, so renaming a
+      note renames the file — the list and Explorer always agree (BR-3). Renamed in place from the
+      title bar or with `F2`; new notes are "Untitled", "Untitled 2", … Collisions gain a numeric
+      suffix rather than erroring or overwriting, since overwriting would destroy a note (BR-6)
 - [ ] **5.3** Decide whether the overlay hides on focus loss *(open question — feels native, but
       risks vanishing mid-thought)*
-- [ ] **5.4** Remember window size/position across sessions
+- [x] **5.4** Window size is a **choice of three presets** — Small (the original 760×520), Medium,
+      and Full (the whole work area) — set in Options and persisted. Position is deliberately *not*
+      remembered: the overlay is placed on whichever display holds the cursor, and a remembered
+      position would put it on a monitor that may not be there this time. The size is recomputed
+      from the work area on every summon for the same reason, so "Full" means full on whichever
+      screen you summoned it to. Preset rather than a draggable edge, because a freely-resized
+      window has the same multi-display problem in a subtler form
+      ([overlay-size.ts](src/shared/overlay-size.ts), 18 tests)
 - [ ] **5.5** Reduce the framer-motion bundle
-- [ ] **5.6** Respect `prefers-reduced-motion`
+- [x] **5.6** Respect `prefers-reduced-motion` — one media query in `global.css`
+- [x] **5.7** Light/dark/system theme, applied via `nativeTheme.themeSource` in the main process.
+      Electron feeds that into the renderer, so the existing `prefers-color-scheme` queries report
+      the user's choice and **no CSS had to change**
 - [ ] **5.7** Empty state and first-run experience
 
 ---
@@ -219,7 +283,7 @@ build SmartScreen reputation regardless. Users will see a SmartScreen warning; t
 
 - [ ] Summon → type markdown → autosaved to a `.md` file
 - [ ] Browse and search previous notes, keyboard only
-- [ ] Preview renders markdown and mermaid diagrams
+- [x] Preview renders markdown and mermaid diagrams
 - [ ] Configurable hotkey and notes folder
 - [ ] CI green on every PR
 - [ ] Tagging a version produces builds for all three platforms automatically

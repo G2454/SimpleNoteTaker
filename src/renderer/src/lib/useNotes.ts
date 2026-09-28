@@ -1,8 +1,35 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AUTOSAVE_DEBOUNCE_MS } from '../../../shared/constants'
 import type { NoteMeta } from '../../../shared/types'
+import { byRecency } from '../../../shared/sorting'
 
 export type SaveState = 'idle' | 'pending' | 'saved'
+
+/**
+ * What `useNotes` hands back.
+ *
+ * Written out rather than inferred so the hook has a readable contract at a
+ * glance, and so a change to its shape shows up as a deliberate edit here
+ * instead of silently rippling into every consumer.
+ */
+export interface NotesController {
+  notes: NoteMeta[]
+  /** Id of the open note, or null before the first load completes. */
+  activeId: string | null
+  content: string
+  query: string
+  saveState: SaveState
+  loading: boolean
+  setQuery: (value: string) => void
+  changeContent: (value: string) => void
+  openNote: (id: string) => Promise<void>
+  createNote: () => Promise<void>
+  deleteNote: (id: string) => Promise<void>
+  /** Resolves to the note's new metadata — the id may have gained a suffix. */
+  renameNote: (id: string, name: string) => Promise<NoteMeta>
+  /** Writes any buffered text immediately, cancelling the autosave debounce. */
+  flush: () => Promise<void>
+}
 
 /**
  * All note state for the app: the list, the open note, and autosave.
@@ -11,7 +38,7 @@ export type SaveState = 'idle' | 'pending' | 'saved'
  * updates the list's titles and ordering — and splitting them would just mean
  * synchronising them from the outside.
  */
-export function useNotes() {
+export function useNotes(): NotesController {
   const [notes, setNotes] = useState<NoteMeta[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [content, setContent] = useState('')
@@ -26,9 +53,7 @@ export function useNotes() {
   /** Applies a save result to the list: updated title, then re-sort by recency. */
   const applyMeta = useCallback((meta: NoteMeta) => {
     setNotes((prev) =>
-      prev
-        .map((note) => (note.id === meta.id ? meta : note))
-        .sort((a, b) => b.updatedAt - a.updatedAt)
+      prev.map((note) => (note.id === meta.id ? meta : note)).sort(byRecency)
     )
   }, [])
 
@@ -104,6 +129,28 @@ export function useNotes() {
     [notes, activeId, openNote, createNote]
   )
 
+  /**
+   * Renames a note, which renames its file on disk.
+   *
+   * The id changes as a result, so the returned meta is authoritative: the
+   * requested name may have picked up a numeric suffix if it was already taken.
+   */
+  const renameNote = useCallback(
+    async (id: string, name: string) => {
+      // Any buffered text still belongs to the old filename — write it first,
+      // or the flush would land on a path that no longer exists.
+      await flush()
+
+      const meta = await window.api.notes.rename(id, name)
+      setNotes((prev) =>
+        prev.map((note) => (note.id === id ? meta : note)).sort(byRecency)
+      )
+      if (activeId === id) setActiveId(meta.id)
+      return meta
+    },
+    [flush, activeId]
+  )
+
   /** First load: open the most recent note, or create one if there are none. */
   useEffect(() => {
     void (async () => {
@@ -165,6 +212,7 @@ export function useNotes() {
     openNote,
     createNote,
     deleteNote,
+    renameNote,
     flush
   }
 }

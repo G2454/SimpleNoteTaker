@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { app, Menu, nativeImage, Tray } from 'electron'
-import { DEFAULT_HOTKEY } from '../shared/constants'
+import { currentHotkey } from './settings'
 
 /**
  * Module-scoped on purpose.
@@ -13,14 +13,20 @@ let tray: Tray | null = null
 
 interface TrayHandlers {
   onToggle: () => void
+  onOpenSettings: () => void
   onQuit: () => void
 }
+
+/** Kept so the menu can be rebuilt when settings change. */
+let handlers: TrayHandlers | null = null
 
 /**
  * Note Taker has no taskbar entry and no window chrome, so the tray icon is the
  * only visible affordance the app exists at all — and the only way to quit it.
  */
-export function createTray({ onToggle, onQuit }: TrayHandlers): Tray {
+export function createTray(next: TrayHandlers): Tray {
+  handlers = next
+
   const icon = nativeImage.createFromPath(resolveIconPath())
 
   // On macOS a "template image" is recoloured automatically by the OS to suit
@@ -29,6 +35,26 @@ export function createTray({ onToggle, onQuit }: TrayHandlers): Tray {
 
   tray = new Tray(icon)
   tray.setToolTip('Note Taker')
+  rebuildTrayMenu()
+
+  // Left-click toggles directly. On Windows and macOS this fires; on most
+  // Linux desktops only the context menu is available, which is why quitting
+  // lives in the menu rather than being click-only.
+  tray.on('click', next.onToggle)
+
+  return tray
+}
+
+/**
+ * Rebuilds the context menu from current state.
+ *
+ * Electron menus are immutable snapshots, not live views: changing the hotkey
+ * or toggling launch-at-login from the options screen would otherwise leave the
+ * tray showing whatever was true at startup.
+ */
+export function rebuildTrayMenu(): void {
+  if (!tray || !handlers) return
+  const { onToggle, onOpenSettings, onQuit } = handlers
 
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -37,11 +63,12 @@ export function createTray({ onToggle, onQuit }: TrayHandlers): Tray {
         // OS-level globalShortcut. Menu accelerators require a focused window,
         // which an overlay app doesn't reliably have.
         label: 'Show / hide Note Taker',
-        accelerator: DEFAULT_HOTKEY,
+        accelerator: currentHotkey(),
         registerAccelerator: false,
         click: onToggle
       },
       { type: 'separator' },
+      { label: 'Options…', click: onOpenSettings },
       {
         label: process.platform === 'darwin' ? 'Open at login' : 'Start with Windows',
         type: 'checkbox',
@@ -52,13 +79,6 @@ export function createTray({ onToggle, onQuit }: TrayHandlers): Tray {
       { label: 'Quit Note Taker', click: onQuit }
     ])
   )
-
-  // Left-click toggles directly. On Windows and macOS this fires; on most
-  // Linux desktops only the context menu is available, which is why quitting
-  // lives in the menu rather than being click-only.
-  tray.on('click', onToggle)
-
-  return tray
 }
 
 /**
@@ -87,6 +107,7 @@ function setLaunchAtLogin(enabled: boolean): void {
 export function destroyTray(): void {
   tray?.destroy()
   tray = null
+  handlers = null
 }
 
 /**
